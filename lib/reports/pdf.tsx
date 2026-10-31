@@ -1,6 +1,6 @@
 import { Document, Font, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
 import { fmtDate } from "@/lib/format";
-import { fmtRate, type EventRow, type ReportModel } from "./build";
+import { fmtRate, type ReportModel } from "./build";
 
 const C = {
   indigo: "#4f46e5",
@@ -185,27 +185,7 @@ function Shell({ m, children }: { m: ReportModel; children: React.ReactNode }) {
   );
 }
 
-const eventCols: Col<EventRow>[] = [
-  { label: "Date", width: "11%", render: (e) => fmtDate(e.date) },
-  { label: "Horaire", width: "13%", render: (e) => e.time },
-  {
-    label: "Événement",
-    width: "38%",
-    render: (e) => (
-      <View>
-        <Text>{t(e.title)}</Text>
-        {e.theme ? <Text style={{ fontSize: 7, color: C.muted, marginTop: 1 }}>{t(`Thème : ${e.theme}`)}</Text> : null}
-      </View>
-    ),
-  },
-  { label: "Présents", width: "11%", align: "center", render: (e) => `${e.present}/${e.expected}` },
-  { label: "Taux", width: "12%", align: "center", render: (e) => <Rate rate={e.rate} /> },
-  { label: "Statut", width: "15%", render: (e) => (e.locked ? "Verrouillé" : "Modifiable") },
-];
-
 function PeriodReport({ m }: { m: ReportModel }) {
-  const groups = new Map<string, EventRow[]>();
-  m.events.forEach((e) => groups.set(e.group, [...(groups.get(e.group) ?? []), e]));
   const withSummary = m.events.filter((e) => e.summary);
 
   return (
@@ -252,27 +232,11 @@ function PeriodReport({ m }: { m: ReportModel }) {
         </>
       )}
 
-      <Text style={s.h2} break>
-        Détail des événements
-      </Text>
-      {m.events.length === 0 && <Text style={s.empty}>Aucun événement sur la période.</Text>}
-      {[...groups].map(([group, evs]) => {
-        const present = evs.reduce((n, e) => n + e.present, 0);
-        const expected = evs.reduce((n, e) => n + e.expected, 0);
-        return (
-          <View key={group} style={{ marginBottom: 6 }}>
-            <View style={s.groupBar} wrap={false} minPresenceAhead={40}>
-              <Text style={s.groupBarText}>{t(`${group} — ${evs.length} événement${evs.length > 1 ? "s" : ""}`)}</Text>
-              <Text style={s.groupBarText}>{t(`Présence : ${fmtRate(expected ? present / expected : null)}`)}</Text>
-            </View>
-            <Table rows={evs} cols={eventCols} />
-          </View>
-        );
-      })}
-
       {withSummary.length > 0 && (
         <>
-          <Text style={s.h2}>Synthèses des événements</Text>
+          <Text style={s.h2} break>
+            Synthèses des événements
+          </Text>
           {withSummary.map((e) => (
             <View key={e.id} style={s.summaryCard}>
               {/* Le titre reste avec le début du texte ; une synthèse longue peut continuer sur la page suivante */}

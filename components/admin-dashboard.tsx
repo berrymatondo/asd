@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { AlertTriangle, CalendarDays, CheckCircle2, FileText, Heart, Layers, ShieldCheck, Sparkles, UserCheck, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowUpRight, FileText, Heart, Layers, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { ReportsPanel } from "@/components/reports-panel";
 import { useStore } from "@/lib/store";
@@ -27,14 +28,15 @@ const avg = (xs: (number | null)[]) => {
 
 export function AdminDashboard({ users }: { users: User[] }) {
   const { data, person } = useStore();
+  const router = useRouter();
   const now = today();
-  const past = data.events.filter((e) => e.date < now);
-  const upcoming = data.events.filter((e) => e.date >= now);
-  const globalAvg = avg(past.map((e) => attendanceRate(e, data)));
   const files = data.docs.flatMap((d) => d.files);
   const answered = data.prayers.filter((p) => p.answered).length;
   const activeUsers = users.filter((u) => u.active);
   const byRole = (r: Role) => activeUsers.filter((u) => u.role === r).length;
+
+  const noShepherd = data.groups.filter((g) => g.shepherdId == null);
+  const ungrouped = data.people.filter((p) => p.groupId == null).length;
 
   // --- Tableau par groupe ---
   const rows = data.groups.map((g) => {
@@ -65,26 +67,6 @@ export function AdminDashboard({ users }: { users: User[] }) {
   });
   const maxMonth = Math.max(1, ...months.map((x) => x.count));
 
-  // --- Points à traiter ---
-  const linkedPersonIds = new Set(users.map((u) => u.personId).filter((x) => x != null));
-  const alerts: { text: string; href: string }[] = [];
-  const noShepherd = data.groups.filter((g) => g.shepherdId == null);
-  if (noShepherd.length) alerts.push({ text: `${noShepherd.length} groupe(s) sans berger : ${noShepherd.map((g) => g.name).join(", ")}`, href: "/groupes" });
-  const bergersIdle = activeUsers.filter((u) => u.role === "berger" && (!u.personId || !data.groups.some((g) => g.shepherdId === u.personId)));
-  if (bergersIdle.length)
-    alerts.push({ text: `${bergersIdle.length} compte(s) berger ne gèrent aucun groupe : ${bergersIdle.map((u) => u.name).join(", ")}`, href: "/utilisateurs" });
-  const shepherdsNoAccount = data.groups.filter((g) => g.shepherdId != null && !linkedPersonIds.has(g.shepherdId));
-  if (shepherdsNoAccount.length)
-    alerts.push({ text: `${shepherdsNoAccount.length} berger(s) désigné(s) sans compte relié : ils ne peuvent pas gérer leur groupe`, href: "/utilisateurs" });
-  const ungrouped = data.people.filter((p) => p.groupId == null).length;
-  if (ungrouped) alerts.push({ text: `${ungrouped} membre(s) sans groupe`, href: "/membres?groupe=none" });
-  const noSummary = past.filter((e) => !e.summary?.trim()).length;
-  if (noSummary) alerts.push({ text: `${noSummary} événement(s) passé(s) sans synthèse`, href: "/evenements" });
-  const openPast = past.filter((e) => !e.locked).length;
-  if (openPast) alerts.push({ text: `${openPast} événement(s) passé(s) encore modifiable(s) (non bloqués)`, href: "/evenements" });
-  const inactive = users.length - activeUsers.length;
-  if (inactive) alerts.push({ text: `${inactive} compte(s) désactivé(s)`, href: "/utilisateurs" });
-
   return (
     <section className="mb-8" aria-labelledby="admin-title">
       <div className="mb-4 flex items-center gap-2">
@@ -94,22 +76,19 @@ export function AdminDashboard({ users }: { users: User[] }) {
         </h2>
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-        <Stat icon={UserCheck} label="Comptes actifs" value={activeUsers.length} sub={`${byRole("admin")} admin · ${byRole("berger")} berger · ${byRole("membre")} membre`} />
-        <Stat icon={Layers} label="Groupes" value={data.groups.length} sub={`${noShepherd.length} sans berger`} />
-        <Stat icon={Users} label="Membres" value={data.people.length} sub={`${ungrouped} sans groupe`} />
-        <Stat icon={CalendarDays} label="Événements à venir" value={upcoming.length} sub={`${past.length} passés`} />
-        <Stat icon={CheckCircle2} label="Présence moyenne" value={pct(globalAvg)} sub="sur les événements passés" />
-        <Stat icon={FileText} label="Documents" value={data.docs.length} sub={`${files.length} fichiers · ${fmtSize(files.reduce((n, f) => n + f.size, 0))}`} />
-        <Stat icon={Heart} label="Prières exaucées" value={`${answered}/${data.prayers.length}`} sub={pct(data.prayers.length ? answered / data.prayers.length : null)} />
-        <Stat icon={Sparkles} label="Témoignages" value={data.testimonies.length} sub={`${data.testimonies.filter((t) => t.prayerId).length} liés à une prière`} />
+      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <Stat href="/groupes" icon={Layers} label="Groupes" value={data.groups.length} sub={`${noShepherd.length} sans berger`} />
+        <Stat href="/membres" icon={Users} label="Membres" value={data.people.length} sub={`${ungrouped} sans groupe`} />
+        <Stat href="/documents" icon={FileText} label="Documents" value={data.docs.length} sub={`${files.length} fichiers · ${fmtSize(files.reduce((n, f) => n + f.size, 0))}`} />
+        <Stat href="/prieres" icon={Heart} label="Prières exaucées" value={`${answered}/${data.prayers.length}`} sub={pct(data.prayers.length ? answered / data.prayers.length : null)} />
+        <Stat href="/temoignages" icon={Sparkles} label="Témoignages" value={data.testimonies.length} sub={`${data.testimonies.filter((t) => t.prayerId).length} liés à une prière`} />
       </div>
 
       <ReportsPanel />
 
-      <div className="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.6fr_1fr]">
+      <div className="mb-4">
         <Card className="gap-3 overflow-hidden">
-          <h3 className="text-sm font-bold">Activité par groupe</h3>
+          <CardTitle href="/groupes">Activité par groupe</CardTitle>
           <div className="-mx-6 overflow-x-auto px-6">
             <table className="w-full min-w-[720px] text-left text-xs">
               <thead className="text-muted-foreground">
@@ -126,9 +105,28 @@ export function AdminDashboard({ users }: { users: User[] }) {
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.g.id} className="border-b last:border-0 hover:bg-accent/40">
-                    <td className="py-2.5 pr-3 font-semibold">{r.g.name}</td>
-                    <td className={cn("py-2.5 pr-3", !r.shepherd && "text-amber-700")}>{r.shepherd ?? "⚠ Non désigné"}</td>
+                  <tr
+                    key={r.g.id}
+                    onClick={(e) => !(e.target as HTMLElement).closest("a") && router.push(`/membres?groupe=${r.g.id}`)}
+                    title={`Voir les membres de ${r.g.name}`}
+                    className="cursor-pointer border-b last:border-0 hover:bg-accent/40"
+                  >
+                    <td className="py-2.5 pr-3 font-semibold">
+                      <Link href={`/membres?groupe=${r.g.id}`} className={cn("text-primary hover:underline", focusRing)}>
+                        {r.g.name}
+                      </Link>
+                    </td>
+                    <td className={cn("py-2.5 pr-3", !r.shepherd && "text-amber-700")}>
+                      {r.shepherd && r.g.shepherdId != null ? (
+                        <Link href={`/membres?groupe=${r.g.id}&fiche=${r.g.shepherdId}`} className={cn("hover:text-primary hover:underline", focusRing)} title="Voir la fiche du berger">
+                          {r.shepherd}
+                        </Link>
+                      ) : (
+                        <Link href={`/groupes?focus=${r.g.id}`} className={cn("hover:underline", focusRing)} title="Désigner un berger">
+                          ⚠ Non désigné
+                        </Link>
+                      )}
+                    </td>
                     <td className="py-2.5 pr-3 text-right tabular-nums">{r.members}</td>
                     <td className="py-2.5 pr-3 text-right tabular-nums">
                       {r.upcoming} / {r.past}
@@ -151,32 +149,11 @@ export function AdminDashboard({ users }: { users: User[] }) {
           )}
         </Card>
 
-        <Card className="gap-3">
-          <h3 className="flex items-center gap-2 text-sm font-bold">
-            <AlertTriangle className="size-4 text-amber-600" /> À traiter
-          </h3>
-          {alerts.length ? (
-            <ul className="divide-y">
-              {alerts.map((a) => (
-                <li key={a.text}>
-                  <Link href={a.href} className="flex items-start gap-2 py-2.5 text-[13px] hover:text-primary">
-                    <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden />
-                    {a.text}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="flex items-center gap-2 text-[13px] text-emerald-700">
-              <CheckCircle2 className="size-4" /> Rien à signaler.
-            </p>
-          )}
-        </Card>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr]">
         <Card className="gap-3">
-          <h3 className="text-sm font-bold">Événements par mois</h3>
+          <CardTitle href="/evenements">Événements par mois</CardTitle>
           <div className="flex h-44 items-end gap-2 border-b border-border pt-6" role="img" aria-label="Nombre d’événements par mois">
             {months.map((mo) => (
               <div key={mo.key} className="group relative flex h-full flex-1 flex-col items-center justify-end">
@@ -189,21 +166,28 @@ export function AdminDashboard({ users }: { users: User[] }) {
                   {mo.global ? ` (dont ${mo.global} commun${mo.global > 1 ? "s" : ""})` : ""}
                 </div>
                 <span className="mb-1 text-[11px] font-semibold tabular-nums">{mo.count || ""}</span>
-                <button
-                  type="button"
-                  tabIndex={0}
-                  aria-label={`${mo.label} ${mo.year} : ${mo.count} événement(s)`}
-                  className={cn("w-full max-w-9 rounded-t-[4px]", mo.key > now.slice(0, 7) ? "bg-primary/45" : "bg-primary")}
-                  style={{ height: `${(mo.count / maxMonth) * 100}%`, minHeight: mo.count ? 4 : 0 }}
+                <Link
+                  href={`/evenements?mois=${mo.key}`}
+                  aria-label={`${mo.label} ${mo.year} : ${mo.count} événement(s) — voir la liste`}
+                  className={cn(
+                    "block w-full max-w-9 rounded-t-[4px] transition-opacity hover:opacity-80 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
+                    mo.key > now.slice(0, 7) ? "bg-primary/45" : "bg-primary"
+                  )}
+                  style={{ height: `${(mo.count / maxMonth) * 100}%`, minHeight: mo.count ? 4 : 6 }}
                 />
               </div>
             ))}
           </div>
           <div className="flex gap-2">
             {months.map((mo) => (
-              <span key={mo.key} className={cn("flex-1 text-center text-[10px] text-muted-foreground", mo.current && "font-bold text-foreground")}>
+              <Link
+                key={mo.key}
+                href={`/evenements?mois=${mo.key}`}
+                className={cn("flex-1 text-center text-[10px] text-muted-foreground hover:text-primary", mo.current && "font-bold text-foreground")}
+                tabIndex={-1}
+              >
                 {mo.label}
-              </span>
+              </Link>
             ))}
           </div>
           <p className="flex items-center gap-3 text-[11px] text-muted-foreground">
@@ -217,15 +201,21 @@ export function AdminDashboard({ users }: { users: User[] }) {
         </Card>
 
         <Card className="gap-3">
-          <h3 className="text-sm font-bold">Comptes par rôle</h3>
+          <CardTitle href="/utilisateurs">Comptes par rôle</CardTitle>
           <ul className="grid gap-3">
             {(["admin", "berger", "membre"] as Role[]).map((r) => (
-              <li key={r} className="grid grid-cols-[110px_1fr_28px] items-center gap-2 text-xs">
-                <span>{ROLE_LABELS[r]}</span>
-                <div className="h-3 overflow-hidden rounded-full bg-[#e9eafd]">
-                  <div className="h-full rounded-full bg-primary" style={{ width: `${activeUsers.length ? (byRole(r) / activeUsers.length) * 100 : 0}%` }} />
-                </div>
-                <b className="text-right tabular-nums">{byRole(r)}</b>
+              <li key={r}>
+                <Link
+                  href={`/utilisateurs?role=${r}`}
+                  title={`Voir les comptes ${ROLE_LABELS[r].toLowerCase()}`}
+                  className={cn("-mx-1 grid grid-cols-[110px_1fr_28px] items-center gap-2 px-1 py-1 text-xs hover:bg-accent/60", focusRing)}
+                >
+                  <span>{ROLE_LABELS[r]}</span>
+                  <div className="h-3 overflow-hidden rounded-full bg-[#e9eafd]">
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${activeUsers.length ? (byRole(r) / activeUsers.length) * 100 : 0}%` }} />
+                  </div>
+                  <b className="text-right tabular-nums">{byRole(r)}</b>
+                </Link>
               </li>
             ))}
           </ul>
@@ -241,15 +231,32 @@ export function AdminDashboard({ users }: { users: User[] }) {
   );
 }
 
-function Stat({ icon: Icon, label, value, sub }: { icon: React.ElementType; label: string; value: React.ReactNode; sub: string }) {
+function Stat({ href, icon: Icon, label, value, sub }: { href: string; icon: React.ElementType; label: string; value: React.ReactNode; sub: string }) {
   return (
-    <Card className="gap-1 p-4">
-      <span className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
-        <Icon className="size-3.5 text-primary" /> {label}
-      </span>
-      <b className="text-2xl tabular-nums">{value}</b>
-      <small className="text-[11px] leading-snug text-muted-foreground">{sub}</small>
-    </Card>
+    <Link href={href} className={cn("group/stat block h-full", focusRing)}>
+      <Card className="h-full gap-1 p-4 transition-all group-hover/stat:border-primary/40 group-hover/stat:shadow-md">
+        <span className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+          <Icon className="size-3.5 text-primary" /> {label}
+          <ArrowUpRight className="ml-auto size-3.5 opacity-0 transition-opacity group-hover/stat:opacity-100" aria-hidden />
+        </span>
+        <b className="text-2xl tabular-nums">{value}</b>
+        <small className="text-[11px] leading-snug text-muted-foreground">{sub}</small>
+      </Card>
+    </Link>
+  );
+}
+
+const focusRing = "rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50";
+
+/** Titre de carte cliquable avec flèche au survol. */
+function CardTitle({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <h3 className="text-sm font-bold">
+      <Link href={href} className={cn("group/title inline-flex items-center gap-2 hover:text-primary", focusRing)}>
+        {children}
+        <ArrowUpRight className="size-3.5 text-muted-foreground opacity-0 transition-opacity group-hover/title:opacity-100" aria-hidden />
+      </Link>
+    </h3>
   );
 }
 

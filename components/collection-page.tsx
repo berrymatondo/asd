@@ -9,6 +9,7 @@ import {
   Download,
   FileDown,
   Paperclip,
+  X,
   Eye,
   UserRound,
   Link2,
@@ -67,6 +68,9 @@ export function CollectionPage({ type }: { type: CollectionKey }) {
   React.useEffect(() => {
     setCurrentGroup(params.get("groupe") ?? "all");
     setSearch("");
+    // ?fiche=ID : ouvre directement la fiche d’un membre
+    const fiche = params.get("fiche");
+    if (type === "people" && fiche) setDetail(Number(fiche));
     const focus = params.get("focus");
     if (!focus) return;
     const id = Number(focus);
@@ -74,9 +78,33 @@ export function CollectionPage({ type }: { type: CollectionKey }) {
     requestAnimationFrame(() => document.getElementById(`item-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
     const t = setTimeout(() => setFlash(null), 2500);
     return () => clearTimeout(t);
-  }, [params]);
+  }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ?mois=AAAA-MM : événements de ce mois (début ou fin dans le mois)
+  const month = type === "events" && /^\d{4}-\d{2}$/.test(params.get("mois") ?? "") ? params.get("mois")! : null;
+  const monthLabel = month
+    ? new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1).toLocaleDateString("fr-FR", { month: "long", year: "numeric" })
+    : "";
+  const clearMonth = () => {
+    const q = new URLSearchParams(params.toString());
+    q.delete("mois");
+    router.replace(`${cfg.route}${q.size ? `?${q}` : ""}`);
+  };
+
+  // Ferme la fiche et retire ?fiche= de l’adresse (sinon un rechargement la rouvrirait)
+  const closeDetail = () => {
+    setDetail(null);
+    if (!params.has("fiche")) return;
+    const q = new URLSearchParams(params.toString());
+    q.delete("fiche");
+    router.replace(`${cfg.route}${q.size ? `?${q}` : ""}`, { scroll: false });
+  };
 
   const items = (data[type] as AnyItem[]).filter((o) => {
+    if (month) {
+      const e = o as AsdEvent;
+      if (!e.date.startsWith(month) && !(e.endDate ?? e.date).startsWith(month)) return false;
+    }
     // Un berger ne voit que les fiches qu’il gère (ses groupes et les membres sans groupe)
     if (type === "people" && !canManagePerson(o as Person)) return false;
     const gid = type === "groups" ? o.id : (o as { groupId: Id | null }).groupId;
@@ -162,6 +190,18 @@ export function CollectionPage({ type }: { type: CollectionKey }) {
         </Select>
       </div>
 
+      {month && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+          <span className="inline-flex items-center gap-2 rounded-full bg-accent px-3 py-1.5 font-semibold text-primary">
+            Mois : {monthLabel}
+            <button type="button" onClick={clearMonth} aria-label="Retirer le filtre du mois" className="grid size-5 cursor-pointer place-items-center rounded-full hover:bg-primary/10">
+              <X className="size-3.5" />
+            </button>
+          </span>
+          <span className="text-muted-foreground">{items.length} événement(s)</span>
+        </div>
+      )}
+
       {items.length ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {items.map((o) => (
@@ -183,7 +223,7 @@ export function CollectionPage({ type }: { type: CollectionKey }) {
         <div className="rounded-2xl border border-dashed bg-card p-14 text-center text-muted-foreground">Aucun résultat pour cette recherche.</div>
       )}
 
-      {type === "people" && <MemberDetailDialog personId={detail} onOpenChange={(o) => !o && setDetail(null)} onEdit={openEdit} />}
+      {type === "people" && <MemberDetailDialog personId={detail} onOpenChange={(o) => !o && closeDetail()} onEdit={openEdit} />}
       <EntityFormDialog type={type} itemId={form.id} open={form.open} onOpenChange={(open) => setForm((f) => ({ ...f, open }))} />
       {type === "events" && <EventFollowupDialog eventId={followup} onOpenChange={(o) => !o && setFollowup(null)} />}
       <ConfirmDialog

@@ -22,10 +22,10 @@ const ROLE_HELP: Record<Role, string> = {
   membre: "Consulte, télécharge, publie et modifie ses propres prières et témoignages.",
 };
 
-export function UsersPage({ users }: { users: User[] }) {
+export function UsersPage({ users, initialRole = "all" }: { users: User[]; initialRole?: string }) {
   const { user: me, person, shepherdOf } = useStore();
   const [search, setSearch] = React.useState("");
-  const [roleFilter, setRoleFilter] = React.useState<string>("all");
+  const [roleFilter, setRoleFilter] = React.useState<string>(initialRole);
   const [form, setForm] = React.useState<{ open: boolean; user?: User | null }>({ open: false });
   const [toDelete, setToDelete] = React.useState<User | null>(null);
 
