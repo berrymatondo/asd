@@ -53,34 +53,17 @@ export function EventReport({
 
         <h2 className="mt-8 border-b-2 border-[#e6e7ff] pb-2 text-xl font-bold">Présences</h2>
         <p className="my-3">
-          {yes} présent(s) · {members.length - yes} absent(s) · {members.length} membre(s) au total
+          <b className="text-emerald-700">{yes} présent(s)</b> · <b className="text-red-700">{members.length - yes} absent(s)</b> · {members.length} membre(s) au
+          total{members.length ? ` · taux de présence ${Math.round((yes / members.length) * 100)} %` : ""}
         </p>
-        <table className="w-full border-collapse">
-          <thead>
-            <tr>
-              <th className="border border-[#dfe5ef] bg-[#f4f4ff] p-2.5 text-left">Membre</th>
-              <th className="border border-[#dfe5ef] bg-[#f4f4ff] p-2.5 text-left">Présence</th>
-            </tr>
-          </thead>
-          <tbody>
-            {members.length ? (
-              members.map((p) => (
-                <tr key={p.id}>
-                  <td className="border border-[#dfe5ef] p-2.5">
-                    {p.first} {p.last}
-                  </td>
-                  <td className="border border-[#dfe5ef] p-2.5">{e.attendance?.[p.id] ? "Présent" : "Absent"}</td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={2} className="border border-[#dfe5ef] p-2.5">
-                  Aucun membre
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        {members.length ? (
+          <div className="grid gap-4 sm:grid-cols-2 print:grid-cols-2">
+            <AttendanceList title="Présents" tone="present" names={members.filter((p) => e.attendance?.[p.id])} />
+            <AttendanceList title="Absents" tone="absent" names={members.filter((p) => !e.attendance?.[p.id])} />
+          </div>
+        ) : (
+          <p className="text-[#68758a]">Aucun membre.</p>
+        )}
 
         <h2 className="mt-8 border-b-2 border-[#e6e7ff] pb-2 text-xl font-bold">Synthèse de l’événement</h2>
         <div
@@ -94,5 +77,36 @@ export function EventReport({
         </Button>
       </div>
     </div>
+  );
+}
+
+/** Liste imprimable d’un côté (présents ou absents), couleurs conservées à l’impression. */
+function AttendanceList({ title, tone, names }: { title: string; tone: "present" | "absent"; names: { id: number; first: string; last: string }[] }) {
+  const present = tone === "present";
+  return (
+    <section
+      className={`overflow-hidden rounded-lg border-2 [print-color-adjust:exact] [-webkit-print-color-adjust:exact] ${present ? "border-emerald-300" : "border-red-300"}`}
+    >
+      <h3 className={`flex justify-between px-3 py-2 font-bold text-white ${present ? "bg-emerald-600" : "bg-red-600"}`}>
+        <span>
+          {present ? "✓" : "✗"} {title}
+        </span>
+        <span>{names.length}</span>
+      </h3>
+      {names.length ? (
+        <ol className={`divide-y ${present ? "bg-emerald-50" : "bg-red-50"}`}>
+          {[...names]
+            .sort((a, b) => `${a.first} ${a.last}`.localeCompare(`${b.first} ${b.last}`, "fr"))
+            .map((p, i) => (
+              <li key={p.id} className="flex gap-2 px-3 py-1.5 text-[14px]">
+                <span className="w-6 text-right text-[#68758a] tabular-nums">{i + 1}.</span>
+                {p.first} {p.last}
+              </li>
+            ))}
+        </ol>
+      ) : (
+        <p className="px-3 py-3 text-[13px] text-[#68758a]">{present ? "Aucun présent." : "Aucun absent."}</p>
+      )}
+    </section>
   );
 }

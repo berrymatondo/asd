@@ -107,15 +107,16 @@ export function ReportsPanel() {
       </div>
 
       <Tabs value={kind} onValueChange={(v) => setKind(v as Kind)}>
-        <TabsList>
-          <TabsTrigger value="mensuel">
+        {/* Trois colonnes égales ; icônes masquées sur téléphone pour que tout tienne */}
+        <TabsList className="grid h-auto grid-cols-3">
+          <TabsTrigger value="mensuel" className="px-1 py-2 text-xs sm:text-sm [&_svg]:hidden sm:[&_svg]:inline">
             <CalendarDays /> Mensuel
           </TabsTrigger>
-          <TabsTrigger value="periode">
-            <CalendarRange /> Par période
+          <TabsTrigger value="periode" className="px-1 py-2 text-xs sm:text-sm [&_svg]:hidden sm:[&_svg]:inline">
+            <CalendarRange /> Période
           </TabsTrigger>
-          <TabsTrigger value="evenement">
-            <FileText /> Par événement
+          <TabsTrigger value="evenement" className="px-1 py-2 text-xs sm:text-sm [&_svg]:hidden sm:[&_svg]:inline">
+            <FileText /> Événement
           </TabsTrigger>
         </TabsList>
 

@@ -348,24 +348,30 @@ function EventReportPdf({ m }: { m: ReportModel }) {
       <Hero m={m} kicker="RAPPORT D’ÉVÉNEMENT" />
       <Kpis m={m} />
       <Text style={s.h2}>Présences</Text>
-      <Table
-        rows={e.attendees}
-        empty="Aucun membre attendu."
-        cols={[
-          { label: "Membre", width: "45%", render: (a) => a.name },
-          { label: "Groupe", width: "35%", render: (a) => a.group },
-          {
-            label: "Présence",
-            width: "20%",
-            align: "center",
-            render: (a) => (
-              <Text style={[s.pill, a.present ? { backgroundColor: C.goodBg, color: C.goodInk } : { backgroundColor: C.lowBg, color: C.lowInk }]}>
-                {a.present ? "Présent" : "Absent"}
-              </Text>
-            ),
-          },
-        ]}
-      />
+      {(["present", "absent"] as const).map((tone) => {
+        const list = e.attendees.filter((a) => a.present === (tone === "present"));
+        const ok = tone === "present";
+        return (
+          <View key={tone} style={{ marginBottom: 10 }}>
+            <View
+              style={{ flexDirection: "row", justifyContent: "space-between", backgroundColor: ok ? "#059669" : "#dc2626", paddingVertical: 5, paddingHorizontal: 8, borderTopLeftRadius: 4, borderTopRightRadius: 4 }}
+              wrap={false}
+              minPresenceAhead={30}
+            >
+              <Text style={{ color: "#fff", fontFamily: "Helvetica-Bold", fontSize: 9.5 }}>{ok ? "Présents" : "Absents"}</Text>
+              <Text style={{ color: "#fff", fontFamily: "Helvetica-Bold", fontSize: 9.5 }}>{list.length}</Text>
+            </View>
+            {list.length === 0 && <Text style={[s.empty, { paddingHorizontal: 8 }]}>{ok ? "Aucun présent." : "Aucun absent."}</Text>}
+            {list.map((a, i) => (
+              <View key={a.personId} style={[s.tr, { backgroundColor: ok ? C.goodBg : C.lowBg }, i % 2 ? { opacity: 0.85 } : {}]} wrap={false}>
+                <Text style={[s.td, { width: "8%", color: C.muted }]}>{i + 1}.</Text>
+                <Text style={[s.td, { width: "52%" }]}>{t(a.name)}</Text>
+                <Text style={[s.td, { width: "40%", color: C.muted }]}>{t(a.group)}</Text>
+              </View>
+            ))}
+          </View>
+        );
+      })}
       <Text style={s.h2}>Synthèse de l’événement</Text>
       <View style={s.summaryCard}>
         <Paragraphs text={e.summary || "Aucune synthèse renseignée."} />

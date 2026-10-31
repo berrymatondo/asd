@@ -73,6 +73,9 @@ const schema = [
   // Anciennes données : fin le jour même, ou le lendemain si l’heure de fin précède l’heure de début
   `update events set end_date = case when end_time <= start_time then date + 1 else date end where end_date is null`,
   `alter table events alter column end_date set not null`,
+  // Prière / témoignage rattaché(e) à un membre (fiche), facultatif
+  `alter table prayers add column if not exists person_id integer references people(id) on delete set null`,
+  `alter table testimonies add column if not exists person_id integer references people(id) on delete set null`,
   // Un document peut regrouper plusieurs fichiers ou images
   `create table if not exists document_files (
     id serial primary key,
@@ -132,6 +135,18 @@ if (legacyDocs) {
     sql`alter table documents drop column content, drop column file_name, drop column mime_type, drop column size`,
   ]);
   console.log("✓ Migration : fichiers des documents déplacés dans document_files");
+}
+// Rattachement automatique : l’auteur correspond à un seul membre du même groupe (nom complet ou prénom)
+for (const table of ["prayers", "testimonies"]) {
+  const r = await sql.query(`
+    update ${table} t set person_id = m.id
+    from people m
+    where t.person_id is null and trim(t.author) <> '' and m.group_id = t.group_id
+      and (lower(trim(m.first_name || ' ' || m.last_name)) = lower(trim(t.author)) or lower(m.first_name) = lower(trim(t.author)))
+      and (select count(*) from people x where x.group_id = t.group_id
+           and (lower(trim(x.first_name || ' ' || x.last_name)) = lower(trim(t.author)) or lower(x.first_name) = lower(trim(t.author)))) = 1
+    returning t.id`);
+  if (r.length) console.log(`✓ ${r.length} ${table === "prayers" ? "prière(s)" : "témoignage(s)"} rattaché(s) à un membre`);
 }
 console.log("✓ Tables prêtes");
 

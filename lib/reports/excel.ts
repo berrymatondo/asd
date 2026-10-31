@@ -316,16 +316,32 @@ function singleEventSheet(wb: ExcelJS.Workbook, m: ReportModel) {
   let row = banner(ws, m, `Rapport d’événement — ${m.title}`, 10);
   row = kpiTiles(ws, row, m);
   row = section(ws, row, "Présences", 10);
-  const head = row;
-  row = header(ws, row, ["Membre", "Groupe", "Présence"]);
-  e.attendees.forEach((a, i) => {
-    row = dataRow(ws, row, [a.name, a.group, a.present ? "Présent" : "Absent"], i);
-    const c = ws.getCell(row - 1, 3);
-    c.fill = fill(a.present ? C.goodBg : C.lowBg);
-    c.font = { bold: true, color: { argb: a.present ? C.goodInk : C.lowInk } };
-    c.alignment = { horizontal: "center" };
-  });
-  if (e.attendees.length) ws.autoFilter = { from: { row: head, column: 1 }, to: { row: row - 1, column: 3 } };
+  for (const present of [true, false]) {
+    const list = e.attendees.filter((a) => a.present === present);
+    // Bandeau coloré « Présents » / « Absents »
+    ws.mergeCells(row, 1, row, 3);
+    const h = ws.getCell(row, 1);
+    h.value = `${present ? "✓ Présents" : "✗ Absents"} — ${list.length}`;
+    h.font = { bold: true, size: 12, color: { argb: C.white } };
+    h.fill = fill(present ? "FF059669" : "FFDC2626");
+    h.alignment = { vertical: "middle", indent: 1 };
+    ws.getRow(row).height = 22;
+    row++;
+    row = header(ws, row, ["Membre", "Groupe", "Présence"]);
+    if (!list.length) {
+      ws.getCell(row, 1).value = present ? "Aucun présent." : "Aucun absent.";
+      ws.getCell(row, 1).font = { italic: true, color: { argb: C.muted } };
+      row++;
+    }
+    list.forEach((a, i) => {
+      row = dataRow(ws, row, [a.name, a.group, present ? "Présent" : "Absent"], i);
+      for (let j = 1; j <= 3; j++) ws.getCell(row - 1, j).fill = fill(present ? C.goodBg : C.lowBg);
+      const c = ws.getCell(row - 1, 3);
+      c.font = { bold: true, color: { argb: present ? C.goodInk : C.lowInk } };
+      c.alignment = { horizontal: "center" };
+    });
+    row++;
+  }
   row = section(ws, row + 1, "Synthèse de l’événement", 10);
   ws.mergeCells(row, 1, row + 14, 10);
   const s = ws.getCell(row, 1);

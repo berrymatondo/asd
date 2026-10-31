@@ -23,8 +23,8 @@ export async function getAppData(user: SessionUser): Promise<{ data: AppData; ma
                                      order by f.position, f.id)
                      from document_files f where f.document_id = d.id), '[]'::json) as files
          from documents d order by d.id`,
-    db()`select id, author, date::text as date, description as "desc", answered, group_id as "groupId", created_by as "createdBy" from prayers order by date, id`,
-    db()`select id, author, date::text as date, description as "desc", answered, group_id as "groupId", prayer_id as "prayerId", created_by as "createdBy"
+    db()`select id, author, date::text as date, description as "desc", answered, group_id as "groupId", person_id as "personId", created_by as "createdBy" from prayers order by date, id`,
+    db()`select id, author, date::text as date, description as "desc", answered, group_id as "groupId", prayer_id as "prayerId", person_id as "personId", created_by as "createdBy"
          from testimonies order by date, id`,
   ]);
 

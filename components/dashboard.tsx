@@ -27,22 +27,53 @@ function Donut({ percent, color, track, value, label }: { percent: number; color
   );
 }
 
-function ChartPanel({ icon: Icon, title, metric, children }: { icon: React.ElementType; title: string; metric: number; children: React.ReactNode }) {
+const linkFocus = "rounded-lg outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50";
+
+/**
+ * Panneau de statistique cliquable : le titre mène à `href` ;
+ * le contenu aussi, sauf si `bodyLinked` est faux (il contient alors ses propres liens).
+ */
+function ChartPanel({
+  icon: Icon,
+  title,
+  metric,
+  href,
+  bodyLinked = true,
+  children,
+}: {
+  icon: React.ElementType;
+  title: string;
+  metric: number;
+  href: string;
+  bodyLinked?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <Card className="min-h-65 gap-0">
-      <h3 className="flex items-center justify-between gap-2 text-sm font-bold">
-        <span className="flex items-center gap-2">
-          <Icon className="size-4 text-primary" /> {title}
-        </span>
-        <span className="text-[22px] text-primary">{metric}</span>
+    <Card className="group/panel min-h-65 gap-0 transition-shadow hover:shadow-md">
+      <h3 className="text-sm font-bold">
+        <Link href={href} className={cn("flex items-center justify-between gap-2 hover:text-primary", linkFocus)}>
+          <span className="flex items-center gap-2">
+            <Icon className="size-4 text-primary" /> {title}
+            <ArrowUpRight className="size-3.5 text-muted-foreground opacity-0 transition-opacity group-hover/panel:opacity-100" aria-hidden />
+          </span>
+          <span className="text-[22px] text-primary">{metric}</span>
+        </Link>
       </h3>
-      {children}
+      {bodyLinked ? (
+        <Link href={href} className={cn("flex flex-1 flex-col", linkFocus)} tabIndex={-1} aria-hidden>
+          {children}
+        </Link>
+      ) : (
+        children
+      )}
     </Card>
   );
 }
 
 export function Dashboard({ adminPanel }: { adminPanel?: React.ReactNode }) {
-  const { data } = useStore();
+  const { data, isBerger, canManageGroup } = useStore();
+  // Les fiches membres sont réservées aux bergers (pour leurs groupes) et à l’admin
+  const groupHref = (gid: number) => (canManageGroup(gid) ? `/membres?groupe=${gid}` : `/groupes?focus=${gid}`);
   const [popup, setPopup] = React.useState(false);
 
   const upcoming = upcomingEvents(data, today());
@@ -92,10 +123,15 @@ export function Dashboard({ adminPanel }: { adminPanel?: React.ReactNode }) {
       </div>
 
       <div className="mb-5.5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <ChartPanel icon={Layers} title="Groupes actifs" metric={data.groups.length}>
-          <div className="my-6.5">
+        <ChartPanel icon={Layers} title="Groupes actifs" metric={data.groups.length} href="/groupes" bodyLinked={false}>
+          <div className="my-5">
             {counts.map(({ g, n }) => (
-              <div key={g.id} className="my-3.5 grid grid-cols-[75px_1fr_20px] items-center gap-2 text-[11px]">
+              <Link
+                key={g.id}
+                href={groupHref(g.id)}
+                title={canManageGroup(g.id) ? `Voir les ${n} membres de ${g.name}` : `Voir ${g.name}`}
+                className={cn("my-1 grid grid-cols-[75px_1fr_20px] items-center gap-2 px-1 py-1.5 text-[11px] hover:bg-accent/60", linkFocus)}
+              >
                 <span className="truncate" title={g.name}>
                   {g.name}
                 </span>
@@ -103,25 +139,25 @@ export function Dashboard({ adminPanel }: { adminPanel?: React.ReactNode }) {
                   <div className="h-full min-w-0.5 rounded-full bg-[#6257ed]" style={{ width: `${(n / max) * 100}%` }} />
                 </div>
                 <b>{n}</b>
-              </div>
+              </Link>
             ))}
           </div>
           <p className="text-xs text-muted-foreground">Répartition des membres par groupe</p>
         </ChartPanel>
 
-        <ChartPanel icon={Users} title="Membres du groupe" metric={data.people.length}>
+        <ChartPanel icon={Users} title="Membres du groupe" metric={data.people.length} href={isBerger ? "/membres" : "/groupes"}>
           <Donut percent={phonePct} color="#5b54e8" track="#e9eafd" value={data.people.length} label="Membres" />
           <p className="text-center text-xs text-muted-foreground">
             {withPhone} avec téléphone · {data.people.length - withPhone} sans téléphone
           </p>
         </ChartPanel>
 
-        <ChartPanel icon={Sparkles} title="Témoignages" metric={data.testimonies.length}>
+        <ChartPanel icon={Sparkles} title="Témoignages" metric={data.testimonies.length} href="/temoignages">
           <Donut percent={testimonyPct} color="#0c9f91" track="#e5f6f3" value={data.testimonies.length} label="Témoignages" />
           <p className="text-center text-xs text-muted-foreground">{linkedTestimonies} liés à une prière exaucée</p>
         </ChartPanel>
 
-        <ChartPanel icon={Heart} title="Prières exaucées" metric={answered}>
+        <ChartPanel icon={Heart} title="Prières exaucées" metric={answered} href="/prieres">
           <Donut percent={prayerPct} color="#e7a03b" track="#fff3df" value={`${prayerPct}%`} label="Exaucées" />
           <p className="text-center text-xs text-muted-foreground">
             {answered} exaucées · {data.prayers.length - answered} en attente
@@ -137,7 +173,7 @@ export function Dashboard({ adminPanel }: { adminPanel?: React.ReactNode }) {
               .slice(-3)
               .reverse()
               .map((p) => (
-                <Row key={p.id} icon="♡" title={p.desc.slice(0, 65)} sub={`${p.author || "Anonyme"} · ${fmtDate(p.date)}`}>
+                <Row key={p.id} href={`/prieres?focus=${p.id}`} icon="♡" title={p.desc.slice(0, 65)} sub={`${p.author || "Anonyme"} · ${fmtDate(p.date)}`}>
                   <Badge variant={p.answered ? "success" : "pending"}>{p.answered ? "Exaucée" : "En cours"}</Badge>
                 </Row>
               ))}
@@ -155,7 +191,7 @@ export function Dashboard({ adminPanel }: { adminPanel?: React.ReactNode }) {
               .slice(-3)
               .reverse()
               .map((t) => (
-                <Row key={t.id} icon="✧" title={t.desc.slice(0, 70)} sub={`${t.author} · ${fmtDate(t.date)}`} />
+                <Row key={t.id} href={`/temoignages?focus=${t.id}`} icon="✧" title={t.desc.slice(0, 70)} sub={`${t.author} · ${fmtDate(t.date)}`} />
               ))}
           </div>
           <Button variant="soft" size="sm" asChild className="w-fit">
@@ -175,15 +211,16 @@ export function Dashboard({ adminPanel }: { adminPanel?: React.ReactNode }) {
   );
 }
 
-function Row({ icon, title, sub, children, className }: { icon: string; title: string; sub: string; children?: React.ReactNode; className?: string }) {
+function Row({ href, icon, title, sub, children, className }: { href: string; icon: string; title: string; sub: string; children?: React.ReactNode; className?: string }) {
   return (
-    <div className={cn("flex items-center gap-3 py-3.5", className)}>
+    <Link href={href} className={cn("-mx-2 flex items-center gap-3 px-2 py-3.5 hover:bg-accent/50", linkFocus, className)}>
       <div className="grid size-10.5 shrink-0 place-items-center rounded-[13px] bg-[#f1f0ff] text-xl text-primary">{icon}</div>
       <div className="min-w-0 flex-1">
         <b className="text-[13px]">{title}</b>
         <p className="mt-1 text-xs text-muted-foreground">{sub}</p>
       </div>
       {children}
-    </div>
+      <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+    </Link>
   );
 }

@@ -9,6 +9,8 @@ import {
   Download,
   FileDown,
   Paperclip,
+  Eye,
+  UserRound,
   Link2,
   Lock,
   LockOpen,
@@ -26,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EntityFormDialog } from "@/components/entity-form-dialog";
+import { MemberDetailDialog } from "@/components/member-detail-dialog";
 import { EventFollowupDialog } from "@/components/event-followup-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useStore } from "@/lib/store";
@@ -55,6 +58,7 @@ export function CollectionPage({ type }: { type: CollectionKey }) {
   const [currentGroup, setCurrentGroup] = React.useState<string>(params.get("groupe") ?? "all");
   const [form, setForm] = React.useState<{ open: boolean; id?: Id | null }>({ open: false });
   const [followup, setFollowup] = React.useState<Id | null>(null);
+  const [detail, setDetail] = React.useState<Id | null>(null);
   const [toDelete, setToDelete] = React.useState<Id | null>(null);
   const [blocked, setBlocked] = React.useState(false);
   const [flash, setFlash] = React.useState<Id | null>(null);
@@ -170,6 +174,7 @@ export function CollectionPage({ type }: { type: CollectionKey }) {
               onEdit={() => openEdit(o.id)}
               onDelete={() => askDelete(o.id)}
               onFollowup={() => setFollowup(o.id)}
+              onOpen={() => setDetail(o.id)}
               onNavigate={(href) => router.push(href)}
             />
           ))}
@@ -178,6 +183,7 @@ export function CollectionPage({ type }: { type: CollectionKey }) {
         <div className="rounded-2xl border border-dashed bg-card p-14 text-center text-muted-foreground">Aucun résultat pour cette recherche.</div>
       )}
 
+      {type === "people" && <MemberDetailDialog personId={detail} onOpenChange={(o) => !o && setDetail(null)} onEdit={openEdit} />}
       <EntityFormDialog type={type} itemId={form.id} open={form.open} onOpenChange={(open) => setForm((f) => ({ ...f, open }))} />
       {type === "events" && <EventFollowupDialog eventId={followup} onOpenChange={(o) => !o && setFollowup(null)} />}
       <ConfirmDialog
@@ -208,6 +214,7 @@ function ItemCard({
   onEdit,
   onDelete,
   onFollowup,
+  onOpen,
   onNavigate,
 }: {
   type: CollectionKey;
@@ -217,6 +224,7 @@ function ItemCard({
   onEdit: () => void;
   onDelete: () => void;
   onFollowup: () => void;
+  onOpen: () => void;
   onNavigate: (href: string) => void;
 }) {
   const { data, isBerger, isAdmin, group, person, shepherdOf, toggleLock, toggleAnswered, canEditOwn, canManageGroup } = useStore();
@@ -285,6 +293,9 @@ function ItemCard({
     const canDelete = isAdmin || (p.groupId != null && canManageGroup(p.groupId) && !leads.length);
     actions = (
       <>
+        <Button variant="soft" size="sm" onClick={onOpen}>
+          <Eye /> Voir la fiche
+        </Button>
         {editBtn}
         {canDelete && delBtn}
       </>
@@ -378,6 +389,11 @@ function ItemCard({
     meta = (
       <>
         {o.author || "Anonyme"} · {fmtDate(o.date)} · {group(o.groupId)?.name}
+        {o.personId != null && person(o.personId) && (
+          <span className="mt-1 flex items-center gap-1.5">
+            <UserRound className="size-3.5 shrink-0" /> Membre : {person(o.personId)!.first} {person(o.personId)!.last}
+          </span>
+        )}
         {type === "testimonies" && (o as Testimony).prayerId && (
           <span className="mt-1 flex items-start gap-1.5">
             <Link2 className="mt-0.5 size-3.5 shrink-0" /> Prière liée : {linkedPrayer?.desc.slice(0, 95) ?? "Prière supprimée"}
@@ -435,8 +451,11 @@ function ItemCard({
   return (
     <Card
       id={`item-${item.id}`}
+      // Fiche membre : un clic sur la carte (hors boutons et liens) ouvre le détail
+      onClick={type === "people" ? (e) => !(e.target as HTMLElement).closest("button,a") && onOpen() : undefined}
       className={cn(
         "gap-3 transition-shadow",
+        type === "people" && "cursor-pointer hover:border-primary/40 hover:shadow-md",
         highlighted && "border-2 border-violet-500 bg-gradient-to-br from-white to-[#f6f1ff] shadow-[0_8px_30px_#7c3aed1c]",
         flash && "focus-flash"
       )}

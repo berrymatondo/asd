@@ -207,6 +207,14 @@ export async function uploadDocumentFile(documentId: number, form: FormData): Pr
 }
 
 // ---------- Prières & témoignages ----------
+/** Le membre concerné doit appartenir au groupe de la publication. */
+async function assertPersonInGroup(personId: number | null, groupId: number) {
+  if (personId == null) return;
+  const [p] = await db()`select group_id from people where id=${personId}`;
+  if (!p) throw new ValidationError("Le membre choisi n’existe plus.");
+  if (p.group_id !== groupId) throw new ValidationError("Le membre choisi doit faire partie du groupe sélectionné.");
+}
+
 /**
  * Modifier/supprimer une prière ou un témoignage : son auteur, le berger de son groupe, ou un admin.
  * Le berger qui modifie la publication d’un autre ne peut la déplacer que vers un de ses groupes.
@@ -231,15 +239,18 @@ export async function savePrayer(input: Input): Promise<Result> {
       groupId: id(input.groupId, "Groupe"),
       date: date(input.date),
       desc: required(input.desc, "Description", 5000),
+      personId: optionalId(input.personId),
     };
+    await assertPersonInGroup(v.personId, v.groupId);
     const pid = optionalId(input.id);
     if (pid) {
       await assertCanEdit("prayers", pid, user, v.groupId);
-      await db()`update prayers set author=${v.author}, group_id=${v.groupId}, date=${v.date}, description=${v.desc} where id=${pid}`;
+      await db()`update prayers set author=${v.author}, group_id=${v.groupId}, date=${v.date}, description=${v.desc}, person_id=${v.personId} where id=${pid}`;
       // Les témoignages liés doivent rester dans le même groupe
       await db()`update testimonies set prayer_id=null where prayer_id=${pid} and group_id <> ${v.groupId}`;
     } else {
-      await db()`insert into prayers (author, group_id, date, description, created_by) values (${v.author}, ${v.groupId}, ${v.date}, ${v.desc}, ${user.id})`;
+      await db()`insert into prayers (author, group_id, date, description, person_id, created_by)
+                 values (${v.author}, ${v.groupId}, ${v.date}, ${v.desc}, ${v.personId}, ${user.id})`;
     }
   });
 }
@@ -253,7 +264,9 @@ export async function saveTestimony(input: Input): Promise<Result> {
       date: date(input.date),
       desc: required(input.desc, "Description", 5000),
       prayerId: optionalId(input.prayerId),
+      personId: optionalId(input.personId),
     };
+    await assertPersonInGroup(v.personId, v.groupId);
     if (v.prayerId) {
       const [p] = await db()`select answered, group_id from prayers where id=${v.prayerId}`;
       if (!p?.answered || p.group_id !== v.groupId) return "Choisissez une prière exaucée du même groupe.";
@@ -261,10 +274,10 @@ export async function saveTestimony(input: Input): Promise<Result> {
     const tid = optionalId(input.id);
     if (tid) {
       await assertCanEdit("testimonies", tid, user, v.groupId);
-      await db()`update testimonies set author=${v.author}, group_id=${v.groupId}, date=${v.date}, description=${v.desc}, prayer_id=${v.prayerId} where id=${tid}`;
+      await db()`update testimonies set author=${v.author}, group_id=${v.groupId}, date=${v.date}, description=${v.desc}, prayer_id=${v.prayerId}, person_id=${v.personId} where id=${tid}`;
     } else {
-      await db()`insert into testimonies (author, group_id, date, description, prayer_id, created_by)
-                 values (${v.author}, ${v.groupId}, ${v.date}, ${v.desc}, ${v.prayerId}, ${user.id})`;
+      await db()`insert into testimonies (author, group_id, date, description, prayer_id, person_id, created_by)
+                 values (${v.author}, ${v.groupId}, ${v.date}, ${v.desc}, ${v.prayerId}, ${v.personId}, ${user.id})`;
     }
   });
 }

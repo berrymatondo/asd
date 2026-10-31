@@ -58,7 +58,7 @@ function Field({ label, name, required, children }: { label: string; name: strin
 }
 
 function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id | null; onDone: () => void }) {
-  const { data, isAdmin, isBerger, upsert, saveDoc, group, canEditOwn, canManageGroup, canManagePerson, managedGroups } = useStore();
+  const { data, user, person, isAdmin, isBerger, upsert, saveDoc, group, canEditOwn, canManageGroup, canManagePerson, managedGroups } = useStore();
   const old = itemId ? (data[type] as { id: Id }[]).find((x) => x.id === itemId) : undefined;
   const o = (old ?? {}) as Record<string, unknown>;
   const str = (k: string) => (o[k] as string | undefined) ?? "";
@@ -66,11 +66,17 @@ function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id |
   // Groupes proposés : tous pour les prières/témoignages, sinon uniquement ceux que l’on gère
   const groupOptions = type === "prayers" || type === "testimonies" ? data.groups : managedGroups;
 
+  const isPost = type === "prayers" || type === "testimonies";
+  // Fiche de l’utilisateur connecté : proposée par défaut pour ses prières/témoignages
+  const myFiche = person(user.personId);
+
   // Un membre peut être créé sans groupe ; les autres éléments en exigent un
   // "none" = membre sans groupe ; "all" = événement commun à tous les groupes (admin)
   const [groupId, setGroupId] = React.useState<string>(
     o.groupId != null
       ? String(o.groupId)
+      : isPost && myFiche?.groupId != null
+        ? String(myFiche.groupId)
       : type === "people" && !itemId
         ? "none"
         : (type === "events" && itemId) || (type === "docs" && isAdmin)
@@ -87,6 +93,11 @@ function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id |
   const [endDate, setEndDate] = React.useState<string>(str("endDate") || str("date") || today());
   const [shepherdId, setShepherdId] = React.useState<string>(o.shepherdId != null ? String(o.shepherdId) : "none");
   const [prayerId, setPrayerId] = React.useState<string>(o.prayerId ? String(o.prayerId) : "none");
+  // Membre concerné par la prière / le témoignage (fiche du même groupe)
+  const [personId, setPersonId] = React.useState<string>(
+    o.personId != null ? String(o.personId) : !itemId && isPost && myFiche?.groupId != null ? String(myFiche.id) : "none"
+  );
+  const groupMembers = data.people.filter((p) => String(p.groupId) === groupId);
   const [saving, setSaving] = React.useState(false);
 
   const oldGroup = o.groupId as Id | null | undefined;
@@ -112,6 +123,7 @@ function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id |
 
   React.useEffect(() => {
     if (prayerId !== "none" && !linkablePrayers.some((p) => String(p.id) === prayerId)) setPrayerId("none");
+    if (personId !== "none" && !groupMembers.some((p) => String(p.id) === personId)) setPersonId("none");
   }, [groupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!allowed) return null;
@@ -156,6 +168,7 @@ function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id |
       if (type === "groups") obj.shepherdId = shepherdId !== "none" ? Number(shepherdId) : null;
       else obj.groupId = groupId !== "none" && groupId !== "all" ? Number(groupId) : null;
       if (type === "testimonies") obj.prayerId = prayerId !== "none" ? Number(prayerId) : null;
+      if (isPost) obj.personId = personId !== "none" ? Number(personId) : null;
       r = await upsert(type, obj);
     }
     setSaving(false);
@@ -184,9 +197,9 @@ function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id |
     </Field>
   );
 
-  const text = (label: string, name: string, required = false, inputType = "text") => (
+  const text = (label: string, name: string, required = false, inputType = "text", fallback?: string) => (
     <Field label={label} name={name} required={required}>
-      <Input id={`f_${name}`} name={name} type={inputType} defaultValue={str(name)} required={required} />
+      <Input id={`f_${name}`} name={name} type={inputType} defaultValue={str(name) || fallback} required={required} />
     </Field>
   );
   const area = (label: string, name: string, required = false) => (
@@ -333,8 +346,39 @@ function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id |
 
       {(type === "prayers" || type === "testimonies") && (
         <>
-          {text(type === "prayers" ? "Auteur (facultatif)" : "Auteur", "author", type === "testimonies")}
           {GroupSelect}
+          <Field label="Membre concerné (facultatif)" name="personId">
+            <Select
+              value={personId}
+              onValueChange={(v) => {
+                setPersonId(v);
+                // Pré-remplit l’auteur s’il est vide
+                const m = groupMembers.find((p) => String(p.id) === v);
+                const author = document.getElementById("f_author") as HTMLInputElement | null;
+                if (m && author && !author.value.trim()) author.value = `${m.first} ${m.last}`.trim();
+              }}
+            >
+              <SelectTrigger id="f_personId">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Aucun membre précis</SelectItem>
+                {groupMembers.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    {p.first} {p.last}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Visible ensuite sur la fiche du membre.</p>
+          </Field>
+          {text(
+            type === "prayers" ? "Auteur (facultatif)" : "Auteur",
+            "author",
+            type === "testimonies",
+            "text",
+            !itemId && myFiche && personId === String(myFiche.id) ? `${myFiche.first} ${myFiche.last}`.trim() : undefined
+          )}
           {dateField}
           {area("Description", "desc", true)}
           {type === "testimonies" && (

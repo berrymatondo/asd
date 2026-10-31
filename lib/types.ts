@@ -84,6 +84,8 @@ export interface Prayer {
   desc: string;
   answered: boolean;
   groupId: Id;
+  /** Membre concerné (fiche), facultatif */
+  personId?: Id | null;
   createdBy?: Id | null;
 }
 
@@ -95,6 +97,8 @@ export interface Testimony {
   answered: boolean;
   groupId: Id;
   prayerId?: Id | null;
+  /** Membre concerné (fiche), facultatif */
+  personId?: Id | null;
   createdBy?: Id | null;
 }
 
