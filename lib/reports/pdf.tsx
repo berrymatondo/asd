@@ -188,7 +188,16 @@ function Shell({ m, children }: { m: ReportModel; children: React.ReactNode }) {
 const eventCols: Col<EventRow>[] = [
   { label: "Date", width: "11%", render: (e) => fmtDate(e.date) },
   { label: "Horaire", width: "13%", render: (e) => e.time },
-  { label: "Événement", width: "38%", render: (e) => e.title },
+  {
+    label: "Événement",
+    width: "38%",
+    render: (e) => (
+      <View>
+        <Text>{t(e.title)}</Text>
+        {e.theme ? <Text style={{ fontSize: 7, color: C.muted, marginTop: 1 }}>{t(`Thème : ${e.theme}`)}</Text> : null}
+      </View>
+    ),
+  },
   { label: "Présents", width: "11%", align: "center", render: (e) => `${e.present}/${e.expected}` },
   { label: "Taux", width: "12%", align: "center", render: (e) => <Rate rate={e.rate} /> },
   { label: "Statut", width: "15%", render: (e) => (e.locked ? "Verrouillé" : "Modifiable") },
@@ -269,7 +278,9 @@ function PeriodReport({ m }: { m: ReportModel }) {
               {/* Le titre reste avec le début du texte ; une synthèse longue peut continuer sur la page suivante */}
               <View wrap={false} minPresenceAhead={40}>
                 <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 9 }}>{t(e.title)}</Text>
-                <Text style={[s.muted, { fontSize: 7.5, marginBottom: 4 }]}>{t(`${fmtDate(e.date)} · ${e.time} · ${e.group}`)}</Text>
+                <Text style={[s.muted, { fontSize: 7.5, marginBottom: 4 }]}>
+                  {t(`${fmtDate(e.date)} · ${e.time} · ${e.group}${e.theme ? ` · Thème : ${e.theme}` : ""}`)}
+                </Text>
               </View>
               <Paragraphs text={e.summary} />
             </View>

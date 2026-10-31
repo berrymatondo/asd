@@ -29,7 +29,7 @@ import { EntityFormDialog } from "@/components/entity-form-dialog";
 import { EventFollowupDialog } from "@/components/event-followup-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useStore } from "@/lib/store";
-import { fileUrl, fmtDate, fmtSize, isPreviewable } from "@/lib/format";
+import { fileUrl, fmtDate, fmtPeriod, fmtSize, isPreviewable } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { AsdEvent, CollectionKey, Doc, Group, Id, Person, Prayer, Testimony } from "@/lib/types";
 
@@ -296,7 +296,12 @@ function ItemCard({
     title = <>📅 {e.title}</>;
     desc = (
       <>
-        {fmtDate(e.date)} · {e.start} – {e.end}
+        {e.theme && (
+          <span className="mb-1 block font-semibold text-foreground">
+            Thème : {e.theme}
+          </span>
+        )}
+        {fmtPeriod(e)}
       </>
     );
     meta = e.groupId == null ? "🌐 Tous les groupes" : group(e.groupId)?.name;

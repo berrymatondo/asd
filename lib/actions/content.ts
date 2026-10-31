@@ -85,24 +85,29 @@ export async function saveEvent(input: Input): Promise<Result> {
     const { managed } = await manager();
     const v = {
       title: required(input.title, "Titre", 200),
+      theme: text(input.theme, 300),
       // Sans groupe = événement commun à tous les groupes (admin uniquement)
       groupId: optionalId(input.groupId),
       date: date(input.date),
       start: time(input.start, "Heure de début"),
+      endDate: date(input.endDate ?? input.date),
       end: time(input.end, "Heure de fin"),
     };
     if (v.groupId == null && managed !== "all") return "Seul un administrateur peut créer un événement pour tous les groupes.";
     assertManages(managed, v.groupId);
-    if (v.end <= v.start) return "L’heure de fin doit être après le début.";
+    // La fin peut tomber le lendemain (veillée) mais doit suivre le début
+    if (`${v.endDate} ${v.end}` <= `${v.date} ${v.start}`) return "La fin doit être après le début (date et heure).";
     const eid = optionalId(input.id);
     if (eid) {
       const [ev] = await db()`select locked, group_id from events where id=${eid}`;
       if (!ev) return "Événement introuvable.";
       assertManages(managed, ev.group_id);
       if (ev.locked) return "Cet événement est verrouillé.";
-      await db()`update events set title=${v.title}, group_id=${v.groupId}, date=${v.date}, start_time=${v.start}, end_time=${v.end} where id=${eid}`;
+      await db()`update events set title=${v.title}, theme=${v.theme}, group_id=${v.groupId}, date=${v.date}, start_time=${v.start},
+                   end_date=${v.endDate}, end_time=${v.end} where id=${eid}`;
     } else {
-      await db()`insert into events (title, date, start_time, end_time, group_id) values (${v.title}, ${v.date}, ${v.start}, ${v.end}, ${v.groupId})`;
+      await db()`insert into events (title, theme, date, start_time, end_date, end_time, group_id)
+                 values (${v.title}, ${v.theme}, ${v.date}, ${v.start}, ${v.endDate}, ${v.end}, ${v.groupId})`;
     }
   });
 }

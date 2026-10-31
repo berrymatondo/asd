@@ -43,3 +43,12 @@ export function fmtSize(bytes: number) {
 export const isPreviewable = (mime: string) => /^image\/(png|jpe?g|gif|webp|avif|bmp)$/.test(mime);
 
 export const fileUrl = (fileId: number, preview = false) => `/api/documents/fichiers/${fileId}${preview ? "?apercu=1" : ""}`;
+
+/**
+ * Période d’un événement :
+ * « 07/11/2026 · 18:30 – 20:00 » le même jour, sinon « 27/11/2026 23:30 → 28/11/2026 05:00 ».
+ */
+export function fmtPeriod(e: { date: string; start: string; endDate?: string; end: string }) {
+  const endDate = e.endDate || e.date;
+  return endDate === e.date ? `${fmtDate(e.date)} · ${e.start} – ${e.end}` : `${fmtDate(e.date)} ${e.start} → ${fmtDate(endDate)} ${e.end}`;
+}

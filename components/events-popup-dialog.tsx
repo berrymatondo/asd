@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { upcomingEvents, useStore } from "@/lib/store";
-import { fmtDate, today } from "@/lib/format";
+import { fmtPeriod, today } from "@/lib/format";
 
 export function EventsPopupDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { data, group } = useStore();
@@ -26,7 +26,8 @@ export function EventsPopupDialog({ open, onOpenChange }: { open: boolean; onOpe
                 <div className="min-w-0 flex-1">
                   <b className="text-[13px]">{e.title}</b>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {fmtDate(e.date)} · {e.start}–{e.end} · {e.groupId == null ? "Tous les groupes" : group(e.groupId)?.name}
+                    {e.theme ? `${e.theme} · ` : ""}
+                    {fmtPeriod(e)} · {e.groupId == null ? "Tous les groupes" : group(e.groupId)?.name}
                   </p>
                 </div>
                 <Button

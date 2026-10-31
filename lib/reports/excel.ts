@@ -172,11 +172,11 @@ function summarySheet(wb: ExcelJS.Workbook, m: ReportModel) {
 }
 
 function eventsSheet(wb: ExcelJS.Workbook, m: ReportModel) {
-  const ws = newSheet(wb, "Événements", [14, 14, 34, 11, 11, 14, 13, 70]);
+  const ws = newSheet(wb, "Événements", [14, 22, 34, 11, 11, 14, 13, 70]);
   ws.properties.outlineProperties = { summaryBelow: false, summaryRight: false };
   let row = banner(ws, m, "Détail des événements", 8);
   const head = row;
-  row = header(ws, row, ["Date", "Horaire", "Événement", "Présents", "Attendus", "Taux", "Statut", "Synthèse"]);
+  row = header(ws, row, ["Date", "Période", "Événement", "Présents", "Attendus", "Taux", "Statut", "Synthèse"]);
   ws.views = [{ state: "frozen", ySplit: head, showGridLines: false }];
 
   // Regroupement par groupe : ligne de titre + lignes repliables (plan Excel)
@@ -203,7 +203,8 @@ function eventsSheet(wb: ExcelJS.Workbook, m: ReportModel) {
     g.height = 20;
     row++;
     evs.forEach((e, i) => {
-      row = dataRow(ws, row, [fmtDate(e.date), e.time, e.title, e.present, e.expected, null, e.locked ? "Verrouillé" : "Modifiable", e.summary || "—"], i, 6, e.rate);
+      const title = e.theme ? `${e.title}\nThème : ${e.theme}` : e.title;
+      row = dataRow(ws, row, [fmtDate(e.date), e.time, title, e.present, e.expected, null, e.locked ? "Verrouillé" : "Modifiable", e.summary || "—"], i, 6, e.rate);
       ws.getRow(row - 1).outlineLevel = 1;
     });
   }

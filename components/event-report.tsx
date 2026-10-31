@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { fmtDate, safeSummary } from "@/lib/format";
+import { fmtPeriod, safeSummary } from "@/lib/format";
 import type { AsdEvent, Person } from "@/lib/types";
 
 /** Rapport imprimable d’un événement (enregistrable en PDF via la boîte d’impression du navigateur). */
@@ -40,9 +40,13 @@ export function EventReport({
         <p className="mt-3">
           <b>Groupe :</b> {e.groupName}
           <br />
-          <b>Date :</b> {fmtDate(e.date)}
-          <br />
-          <b>Horaire :</b> {e.start} – {e.end}
+          {e.theme && (
+            <>
+              <b>Thème :</b> {e.theme}
+              <br />
+            </>
+          )}
+          <b>Période :</b> {fmtPeriod(e)}
           <br />
           <b>Statut :</b> {e.locked ? "Verrouillé" : "Éditable"}
         </p>

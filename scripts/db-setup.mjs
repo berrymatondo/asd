@@ -67,6 +67,12 @@ const schema = [
   `alter table events alter column group_id drop not null`,
   // Document sans groupe = partagé avec tous les groupes (créé par un admin)
   `alter table documents alter column group_id drop not null`,
+  // Thème facultatif et date de fin (événements sur plusieurs jours, veillées de nuit)
+  `alter table events add column if not exists theme text not null default ''`,
+  `alter table events add column if not exists end_date date`,
+  // Anciennes données : fin le jour même, ou le lendemain si l’heure de fin précède l’heure de début
+  `update events set end_date = case when end_time <= start_time then date + 1 else date end where end_date is null`,
+  `alter table events alter column end_date set not null`,
   // Un document peut regrouper plusieurs fichiers ou images
   `create table if not exists document_files (
     id serial primary key,

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, fmtPeriod } from "@/lib/format";
 
 /** Ce qu’un rapport contient, quel que soit son format (PDF ou Excel). */
 export interface ReportModel {
@@ -42,7 +42,9 @@ export interface MonthRow {
 export interface EventRow {
   id: number;
   title: string;
+  theme: string;
   date: string;
+  /** Période lisible : même jour « 18:30 – 20:00 », sinon « 27/11 23:30 → 28/11 05:00 » */
   time: string;
   group: string;
   groupId: number | null;
@@ -125,7 +127,8 @@ export async function buildReport(req: ReportRequest, generatedBy: string): Prom
   // --- Bornes et filtre ---
   let from: string, to: string, groupId: number | null, eventsRows;
   if (req.kind === "evenement") {
-    eventsRows = await sql`select id, title, date::text as date, start_time, end_time, group_id, locked, attendance, summary from events where id=${req.eventId}`;
+    eventsRows = await sql`select id, title, theme, date::text as date, start_time, end_date::text as end_date, end_time, group_id, locked, attendance, summary
+                     from events where id=${req.eventId}`;
     if (!eventsRows.length) throw new ReportError("Événement introuvable.");
     from = to = eventsRows[0].date as string;
     groupId = null;
@@ -143,7 +146,7 @@ export async function buildReport(req: ReportRequest, generatedBy: string): Prom
     if (groupId != null && !groupName.has(groupId)) throw new ReportError("Groupe introuvable.");
     // Avec un filtre de groupe, on garde aussi les événements communs
     eventsRows = await sql`
-      select id, title, date::text as date, start_time, end_time, group_id, locked, attendance, summary from events
+      select id, title, theme, date::text as date, start_time, end_date::text as end_date, end_time, group_id, locked, attendance, summary from events
       where date between ${from} and ${to} and (${groupId}::int is null or group_id = ${groupId} or group_id is null)
       order by date, start_time`;
   }
@@ -178,7 +181,11 @@ export async function buildReport(req: ReportRequest, generatedBy: string): Prom
       id: e.id as number,
       title: e.title as string,
       date: e.date as string,
-      time: `${e.start_time} – ${e.end_time}`,
+      theme: (e.theme as string) ?? "",
+      time:
+        e.end_date === e.date
+          ? `${e.start_time} – ${e.end_time}`
+          : `${e.start_time} → ${fmtDate(e.end_date as string).slice(0, 5)} ${e.end_time}`,
       group: gid == null ? COMMON : nameOf(gid),
       groupId: gid,
       locked: e.locked as boolean,
@@ -275,7 +282,7 @@ export async function buildReport(req: ReportRequest, generatedBy: string): Prom
     return {
       kind: "evenement",
       title: e.title,
-      subtitle: `${fmtDate(e.date)} · ${e.time} · ${e.group}`,
+      subtitle: `${e.theme ? `Thème : ${e.theme} · ` : ""}${fmtPeriod({ date: e.date, start: eventsRows[0].start_time as string, endDate: eventsRows[0].end_date as string, end: eventsRows[0].end_time as string })} · ${e.group}`,
       scope: e.group,
       generatedAt,
       generatedBy,

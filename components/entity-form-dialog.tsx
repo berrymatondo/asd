@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useStore } from "@/lib/store";
 import { Paperclip, Undo2, X } from "lucide-react";
-import { fmtSize, today } from "@/lib/format";
+import { fmtDate, fmtSize, today } from "@/lib/format";
 import type { AsdEvent, CollectionKey, Doc, Id, Person, Prayer, Testimony } from "@/lib/types";
 
 const LABELS: Record<CollectionKey, string> = {
@@ -82,6 +82,9 @@ function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id |
   const [removed, setRemoved] = React.useState<Id[]>([]);
   const [newFiles, setNewFiles] = React.useState<File[]>([]);
   const [progress, setProgress] = React.useState<string | null>(null);
+  // Événements : période début → fin (la fin peut être le lendemain, ex. veillée)
+  const [startDate, setStartDate] = React.useState<string>(str("date") || today());
+  const [endDate, setEndDate] = React.useState<string>(str("endDate") || str("date") || today());
   const [shepherdId, setShepherdId] = React.useState<string>(o.shepherdId != null ? String(o.shepherdId) : "none");
   const [prayerId, setPrayerId] = React.useState<string>(o.prayerId ? String(o.prayerId) : "none");
   const [saving, setSaving] = React.useState(false);
@@ -120,7 +123,8 @@ function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id |
 
     // Contrôles rapides côté navigateur ; le serveur revalide tout
     if (type === "events") {
-      if (String(form.get("end")) <= String(form.get("start"))) return toast.error("L’heure de fin doit être après le début.");
+      if (`${form.get("endDate")} ${form.get("end")}` <= `${form.get("date")} ${form.get("start")}`)
+        return toast.error("La fin doit être après le début (date et heure).");
       if ((old as AsdEvent | undefined)?.locked) return toast.error("Cet événement est verrouillé.");
     }
     if (type === "testimonies" && prayerId !== "none") {
@@ -251,12 +255,35 @@ function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id |
       {type === "events" && (
         <>
           {text("Titre", "title", true)}
+          {text("Thème (facultatif)", "theme")}
           {GroupSelect}
-          {dateField}
           <div className="grid grid-cols-2 gap-3">
+            <Field label="Date de début" name="date" required>
+              <Input
+                id="f_date"
+                name="date"
+                type="date"
+                value={startDate}
+                required
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setStartDate(v);
+                  // La fin suit le début si elle devient antérieure
+                  if (v && endDate < v) setEndDate(v);
+                }}
+              />
+            </Field>
             {text("Heure de début", "start", true, "time")}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Date de fin" name="endDate" required>
+              <Input id="f_endDate" name="endDate" type="date" value={endDate} min={startDate} required onChange={(e) => setEndDate(e.target.value)} />
+            </Field>
             {text("Heure de fin", "end", true, "time")}
           </div>
+          {startDate && endDate > startDate && (
+            <p className="-mt-2 text-xs text-muted-foreground">Événement sur plusieurs jours : il se termine le {fmtDate(endDate)}.</p>
+          )}
         </>
       )}
 

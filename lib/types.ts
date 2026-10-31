@@ -45,8 +45,13 @@ export interface Person {
 export interface AsdEvent {
   id: Id;
   title: string;
+  /** Thème (facultatif), par ex. celui d’une veillée */
+  theme: string;
+  /** Début : date + heure */
   date: string;
   start: string;
+  /** Fin : date + heure (peut être le lendemain, ex. veillée de nuit) */
+  endDate: string;
   end: string;
   /** null = événement commun à tous les groupes (créé par un admin) */
   groupId: Id | null;

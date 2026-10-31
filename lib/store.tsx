@@ -132,5 +132,5 @@ export function useStore() {
 
 /** Événements à venir (date ≥ aujourd’hui), triés par date. */
 export function upcomingEvents(data: AppData, todayStr: string) {
-  return [...data.events].filter((e) => e.date >= todayStr).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  return [...data.events].filter((e) => (e.endDate || e.date) >= todayStr).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
 }

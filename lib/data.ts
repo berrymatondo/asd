@@ -6,7 +6,8 @@ const groupsQ = () => db()`select id, name, goal, description as "desc", shepher
 const peopleQ = () =>
   db()`select id, first_name as "first", last_name as "last", phone, group_id as "groupId", notes from people order by first_name, last_name`;
 const eventsQ = () =>
-  db()`select id, title, date::text as date, start_time as start, end_time as "end", group_id as "groupId", locked, attendance, summary
+  db()`select id, title, theme, date::text as date, start_time as start, end_date::text as "endDate", end_time as "end",
+              group_id as "groupId", locked, attendance, summary
        from events order by date, start_time`;
 
 /** Charge toutes les données visibles par l’utilisateur, et les groupes qu’il gère. */
@@ -57,7 +58,7 @@ function redact(p: Person): Person {
 /** Données nécessaires au rapport imprimable d’un événement. */
 export async function getEventReport(id: number) {
   const rows = await db()`
-    select e.id, e.title, e.date::text as date, e.start_time as start, e.end_time as "end", e.group_id as "groupId",
+    select e.id, e.title, e.theme, e.date::text as date, e.start_time as start, e.end_date::text as "endDate", e.end_time as "end", e.group_id as "groupId",
            e.locked, e.attendance, e.summary, coalesce(g.name, 'Tous les groupes') as "groupName"
     from events e left join groups g on g.id = e.group_id where e.id = ${id}`;
   const event = rows[0] as (AsdEvent & { groupName: string }) | undefined;
