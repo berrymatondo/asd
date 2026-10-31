@@ -22,17 +22,18 @@ export function EventFollowupDialog({ eventId, onOpenChange }: { eventId: Id | n
 }
 
 function Body({ eventId, onDone }: { eventId: Id; onDone: () => void }) {
-  const { data, isBerger, group, saveFollowup } = useStore();
+  const { data, canManageGroup, group, saveFollowup } = useStore();
   const ev = data.events.find((e) => e.id === eventId);
   const editor = React.useRef<RichEditorHandle>(null);
-  const members = ev ? data.people.filter((p) => p.groupId === ev.groupId) : [];
+  // Événement commun : tous les membres sont concernés
+  const members = ev ? data.people.filter((p) => ev.groupId == null || p.groupId === ev.groupId) : [];
   const [checked, setChecked] = React.useState<Record<string, boolean>>(() =>
     Object.fromEntries(members.map((p) => [String(p.id), !!ev?.attendance?.[p.id]]))
   );
 
   const [saving, setSaving] = React.useState(false);
 
-  if (!ev || !isBerger) return null;
+  if (!ev || !canManageGroup(ev.groupId)) return null;
   const locked = ev.locked;
   const present = members.filter((p) => checked[p.id]).length;
 

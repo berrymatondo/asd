@@ -41,7 +41,7 @@ function ChartPanel({ icon: Icon, title, metric, children }: { icon: React.Eleme
   );
 }
 
-export function Dashboard() {
+export function Dashboard({ adminPanel }: { adminPanel?: React.ReactNode }) {
   const { data } = useStore();
   const [popup, setPopup] = React.useState(false);
 
@@ -75,6 +75,8 @@ export function Dashboard() {
           Voir les événements <ArrowUpRight />
         </Button>
       </div>
+
+      {adminPanel}
 
       <div className="mb-7 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>

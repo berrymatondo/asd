@@ -3,7 +3,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "./db";
-import type { Role, SessionUser } from "./types";
+import type { Managed, Role, SessionUser } from "./types";
 
 export const SESSION_COOKIE = "asd_session";
 const SESSION_DAYS = 30;
@@ -36,7 +36,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const rows = await db()`
-    select u.id, u.name, u.email, u.role
+    select u.id, u.name, u.email, u.role, u.person_id as "personId"
     from sessions s join users u on u.id = s.user_id
     where s.id = ${hashToken(token)} and s.expires_at > now() and u.active`;
   return (rows[0] as SessionUser | undefined) ?? null;
@@ -59,3 +59,33 @@ export async function assertUser(roles?: Role[]) {
   if (roles && !roles.includes(user.role)) throw new AuthError("Action non autorisée pour votre rôle.");
   return user;
 }
+
+/**
+ * Périmètre de gestion : l’admin gère tout ; un berger ne gère que les groupes
+ * dont sa fiche membre est le berger ; un membre ne gère aucun groupe.
+ */
+export const getManaged = cache(async (user: SessionUser): Promise<Managed> => {
+  if (user.role === "admin") return "all";
+  if (user.role !== "berger" || !user.personId) return [];
+  const rows = await db()`select id from groups where shepherd_id = ${user.personId} order by id`;
+  return rows.map((r) => r.id as number);
+});
+
+export const manages = (managed: Managed, groupId: number | null | undefined) =>
+  managed === "all" || (groupId != null && managed.includes(groupId));
+
+/**
+ * Groupes dont l’utilisateur voit les événements : tous (admin), sinon ceux qu’il mène
+ * plus le groupe de sa fiche membre. Les événements et documents communs (sans groupe) sont visibles de tous.
+ */
+export const getVisibleGroups = cache(async (user: SessionUser): Promise<Managed> => {
+  const managed = await getManaged(user);
+  if (managed === "all") return "all";
+  if (!user.personId) return managed;
+  const [p] = await db()`select group_id from people where id = ${user.personId}`;
+  const own = p?.group_id as number | null | undefined;
+  return own != null && !managed.includes(own) ? [...managed, own] : managed;
+});
+
+/** Événement ou document : visible si commun (sans groupe) ou rattaché à un groupe visible. */
+export const canSeeGroupItem = (visible: Managed, groupId: number | null) => groupId == null || manages(visible, groupId);

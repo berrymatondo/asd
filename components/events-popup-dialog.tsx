@@ -26,7 +26,7 @@ export function EventsPopupDialog({ open, onOpenChange }: { open: boolean; onOpe
                 <div className="min-w-0 flex-1">
                   <b className="text-[13px]">{e.title}</b>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {fmtDate(e.date)} · {e.start}–{e.end} · {group(e.groupId)?.name}
+                    {fmtDate(e.date)} · {e.start}–{e.end} · {e.groupId == null ? "Tous les groupes" : group(e.groupId)?.name}
                   </p>
                 </div>
                 <Button

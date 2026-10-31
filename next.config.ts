@@ -1,9 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Bibliothèques de génération de rapports, chargées telles quelles côté serveur
+  serverExternalPackages: ["@react-pdf/renderer", "exceljs"],
   experimental: {
-    // Documents jusqu’à 3 Mo + marge pour l’encodage multipart
-    serverActions: { bodySizeLimit: "4mb" },
+    // Fichiers envoyés un par un : 4 Mo max + marge pour l’encodage multipart
+    serverActions: { bodySizeLimit: "5mb" },
   },
 };
 

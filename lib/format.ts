@@ -32,3 +32,14 @@ export function safeSummary(html: string) {
 export function plural(n: number, word: string) {
   return `${n} ${word}${n > 1 ? "s" : ""}`;
 }
+
+export function fmtSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} Mo`;
+}
+
+/** Images affichables en aperçu (le SVG est exclu car il peut contenir du script). */
+export const isPreviewable = (mime: string) => /^image\/(png|jpe?g|gif|webp|avif|bmp)$/.test(mime);
+
+export const fileUrl = (fileId: number, preview = false) => `/api/documents/fichiers/${fileId}${preview ? "?apercu=1" : ""}`;

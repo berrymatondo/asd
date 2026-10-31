@@ -16,16 +16,27 @@ npm run dev                  # http://localhost:3000
 
 ## Rôles
 
+Chaque compte peut être relié à **une fiche membre** (page Utilisateurs). Un berger gère uniquement **ses groupes** : ceux dont sa fiche est le berger.
+
 | Action | Admin | Berger | Membre |
 |---|:-:|:-:|:-:|
-| Gérer les utilisateurs et leurs rôles (`/utilisateurs`) | ✓ | | |
-| Créer / modifier / supprimer groupes, membres, événements, documents | ✓ | ✓ | |
-| Voir les fiches privées (`/membres` : téléphone, notes) | ✓ | ✓ | |
-| Synthèse & présences, bloquer un événement, marquer « exaucé » | ✓ | ✓ | |
+| Gérer les utilisateurs, leurs rôles et leur fiche reliée (`/utilisateurs`) | ✓ | | |
+| Créer / supprimer un groupe | ✓ | | |
+| Modifier un groupe | tous | ses groupes | |
+| Désigner ou changer le berger d’un groupe | ✓ | | |
+| Voir et gérer les fiches privées (`/membres`) | toutes | ses groupes + membres sans groupe | |
+| Événements, documents, synthèse & présences, blocage | tous | ses groupes | |
+| Événement commun à **tous les groupes** | ✓ | | |
+| Tableau de bord administrateur (indicateurs, activité par groupe, points à traiter) | ✓ | | |
+| Rapports PDF et Excel (mensuel, par période, par événement) | ✓ | | |
+| Voir un événement ou un document de groupe | tous | ses groupes + le groupe de sa fiche | le groupe de sa fiche |
+| Partager un document avec **tous les groupes** | ✓ | | |
+| Marquer une prière / un témoignage « exaucé » | tous | ses groupes | |
 | Consulter, télécharger les documents, ouvrir les rapports | ✓ | ✓ | ✓ |
 | Publier une prière ou un témoignage | ✓ | ✓ | ✓ |
-| Modifier / supprimer une prière ou un témoignage | tous | tous | les siens |
+| Modifier / supprimer une prière ou un témoignage | tous | ses groupes + les siens | les siens |
 
+Un berger ne peut pas supprimer une fiche de berger (la sienne comprise). Un compte « berger » sans fiche reliée, ou dont la fiche ne mène aucun groupe, ne gère rien : un message l’explique dans l’interface.
 Les droits sont vérifiés **côté serveur** (pages et actions) ; l’interface masque seulement les boutons inutiles.
 Garde-fous : un administrateur ne peut ni se supprimer ni retirer son propre rôle, et il reste toujours au moins un administrateur actif. Désactiver un compte ou réinitialiser son mot de passe ferme ses sessions.
 
@@ -38,7 +49,7 @@ Garde-fous : un administrateur ne peut ni se supprimer ni retirer son propre rô
 | `/groupes`, `/membres`, `/evenements`, `/documents`, `/prieres`, `/temoignages` | Listes avec recherche, filtre par groupe et CRUD |
 | `/utilisateurs` | Gestion des comptes (admin) |
 | `/rapport/[id]` | Rapport d’événement imprimable |
-| `/api/documents/[id]` | Téléchargement d’un fichier (utilisateur connecté) |
+| `/api/documents/fichiers/[id]` | Téléchargement d’un fichier (`?apercu=1` : aperçu d’image), utilisateur connecté |
 
 ## Règles métier
 - Un membre peut exister sans groupe (filtre « Sans groupe » sur la page Membres).
@@ -47,7 +58,14 @@ Garde-fous : un administrateur ne peut ni se supprimer ni retirer son propre rô
 - L’heure de fin doit suivre l’heure de début.
 - Un groupe non vide ne peut pas être supprimé.
 - Un témoignage ne peut être lié qu’à une prière exaucée du même groupe ; supprimer la prière ou la repasser « non exaucée » délie ses témoignages.
-- Documents : 3 Mo maximum, stockés en base.
+- Documents : jusqu’à 10 fichiers ou images par document, 4 Mo chacun, stockés en base (table `document_files`) et envoyés un par un. Les images ont un aperçu.
+- Un événement sans groupe est commun : visible dans tous les groupes, présences sur l’ensemble des membres.
+
+## Rapports (admin)
+Depuis le tableau de bord, panneau « Rapports » → `/api/rapports?type=mensuel|periode|evenement&format=pdf|xlsx`.
+- **PDF** : couverture, indicateurs, activité par groupe, événements par mois, synthèse mensuelle, détail des événements regroupés par groupe, synthèses, assiduité des membres, prières et témoignages.
+- **Excel** : feuilles Synthèse, Événements (regroupés et repliables par groupe), Présences (matrice membres × événements), Assiduité (filtrable), Prières, Témoignages ; taux colorés (vert ≥ 75 %, orange ≥ 50 %, rouge en dessous).
+- Les présences attendues se basent sur la composition **actuelle** des groupes.
 
 ## Structure
 ```

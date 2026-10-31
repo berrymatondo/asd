@@ -44,13 +44,15 @@ const schema = [
   // Un membre peut n’appartenir à aucun groupe ; le berger d’un groupe est une fiche membre
   `alter table people alter column group_id drop not null`,
   `alter table groups add column if not exists shepherd_id integer references people(id) on delete set null`,
+  // Un compte peut être relié à une fiche membre (une seule fiche par compte)
+  `alter table users add column if not exists person_id integer unique references people(id) on delete set null`,
   `create table if not exists events (
     id serial primary key,
     title text not null,
     date date not null,
     start_time text not null,
     end_time text not null,
-    group_id integer not null references groups(id) on delete restrict,
+    group_id integer references groups(id) on delete restrict,
     locked boolean not null default false,
     attendance jsonb not null default '{}'::jsonb,
     summary text not null default ''
@@ -59,12 +61,23 @@ const schema = [
     id serial primary key,
     title text not null,
     description text not null default '',
+    group_id integer not null references groups(id) on delete restrict
+  )`,
+  // Événement sans groupe = visible dans tous les groupes (créé par un admin)
+  `alter table events alter column group_id drop not null`,
+  // Document sans groupe = partagé avec tous les groupes (créé par un admin)
+  `alter table documents alter column group_id drop not null`,
+  // Un document peut regrouper plusieurs fichiers ou images
+  `create table if not exists document_files (
+    id serial primary key,
+    document_id integer not null references documents(id) on delete cascade,
     file_name text not null,
     mime_type text not null default 'application/octet-stream',
     size integer not null default 0,
     content bytea not null,
-    group_id integer not null references groups(id) on delete restrict
+    position integer not null default 0
   )`,
+  `create index if not exists document_files_doc_idx on document_files(document_id)`,
   `create table if not exists prayers (
     id serial primary key,
     author text not null default '',
@@ -103,6 +116,16 @@ if (legacy) {
   }
   await sql`alter table groups drop column shepherd`;
   console.log(`✓ Migration : ${groups.length} berger(s) convertis en fiches membres`);
+}
+// Migration : un fichier unique par document → table document_files
+const [{ legacyDocs }] = await sql`select exists (select 1 from information_schema.columns where table_name='documents' and column_name='content') as "legacyDocs"`;
+if (legacyDocs) {
+  await sql.transaction([
+    sql`insert into document_files (document_id, file_name, mime_type, size, content)
+        select id, file_name, mime_type, size, content from documents`,
+    sql`alter table documents drop column content, drop column file_name, drop column mime_type, drop column size`,
+  ]);
+  console.log("✓ Migration : fichiers des documents déplacés dans document_files");
 }
 console.log("✓ Tables prêtes");
 
@@ -156,9 +179,17 @@ if (groupCount === 0) {
     ('Étude biblique', '2026-11-14', '17:00', '18:30', ${g2}, true, ${JSON.stringify({ [p3]: true })}),
     ('Temps de partage', '2026-11-21', '15:00', '16:30', ${g3}, false, ${JSON.stringify({ [p4]: true })})`;
   const hex = (s) => Buffer.from(s, "utf8").toString("hex");
-  await sql`insert into documents (title, description, file_name, mime_type, size, content, group_id) values
-    ('Guide du disciple', 'Les premiers pas dans le parcours ASD.', 'guide-disciple.txt', 'text/plain', 44, decode(${hex("Bienvenue dans votre parcours de disciple !")}, 'hex'), ${g1}),
-    ('Plan de prière', 'Propositions pour les temps de prière.', 'plan-priere.txt', 'text/plain', 41, decode(${hex("Prière, gratitude, intercession, partage.")}, 'hex'), ${g2})`;
+  const d = await sql`insert into documents (title, description, group_id) values
+    ('Guide du disciple', 'Les premiers pas dans le parcours ASD.', ${g1}),
+    ('Plan de prière', 'Propositions pour les temps de prière.', ${g2})
+    returning id`;
+  const files = [
+    [d[0].id, "guide-disciple.txt", "Bienvenue dans votre parcours de disciple !"],
+    [d[1].id, "plan-priere.txt", "Prière, gratitude, intercession, partage."],
+  ];
+  for (const [docId, name, txt] of files)
+    await sql`insert into document_files (document_id, file_name, mime_type, size, content)
+              values (${docId}, ${name}, 'text/plain', ${Buffer.byteLength(txt)}, decode(${hex(txt)}, 'hex'))`;
   await sql`insert into prayers (author, date, description, answered, group_id) values
     ('Marie', '2026-10-28', 'Prions pour les familles de notre communauté.', false, ${g1}),
     ('', '2026-10-25', 'Merci de prier pour une recherche d’emploi.', true, ${g1}),
@@ -169,6 +200,14 @@ if (groupCount === 0) {
   console.log("✓ Données de démonstration insérées");
 } else {
   console.log("✓ Données existantes conservées");
+}
+
+// Comptes de démonstration reliés à leur fiche (uniquement s’ils ne le sont pas déjà)
+for (const [email, fullName] of [["berger@asd.local", "Pasteur Samuel"], ["membre@asd.local", "Marie Kouamé"]]) {
+  await sql`update users set person_id = (
+              select p.id from people p where trim(p.first_name || ' ' || p.last_name) = ${fullName}
+              and not exists (select 1 from users u where u.person_id = p.id) limit 1)
+            where email = ${email} and person_id is null`;
 }
 
 await sql`delete from sessions where expires_at < now()`;

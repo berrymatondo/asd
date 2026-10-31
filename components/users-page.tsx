@@ -18,12 +18,12 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 
 const ROLE_HELP: Record<Role, string> = {
   admin: "Gère les comptes et tout le contenu.",
-  berger: "Gère les groupes, membres, événements, documents, prières et témoignages.",
+  berger: "Gère uniquement les groupes dont sa fiche membre est le berger (membres, événements, documents, prières, témoignages).",
   membre: "Consulte, télécharge, publie et modifie ses propres prières et témoignages.",
 };
 
 export function UsersPage({ users }: { users: User[] }) {
-  const { user: me } = useStore();
+  const { user: me, person, shepherdOf } = useStore();
   const [search, setSearch] = React.useState("");
   const [roleFilter, setRoleFilter] = React.useState<string>("all");
   const [form, setForm] = React.useState<{ open: boolean; user?: User | null }>({ open: false });
@@ -87,6 +87,7 @@ export function UsersPage({ users }: { users: User[] }) {
                 {u.name} {u.id === me.id && <span className="text-xs font-semibold text-muted-foreground">(vous)</span>}
               </h3>
               <p className="text-[13px] break-all text-muted-foreground">{u.email}</p>
+              <LinkedPerson personId={u.personId} role={u.role} person={person} shepherdOf={shepherdOf} />
               <p className="text-xs text-[#59677e]">Créé le {new Date(u.createdAt).toLocaleDateString("fr-FR")}</p>
               <div className="mt-auto flex flex-wrap gap-2 pt-2">
                 <Button variant="outline" size="sm" onClick={() => setForm({ open: true, user: u })}>
@@ -108,7 +109,13 @@ export function UsersPage({ users }: { users: User[] }) {
       <Dialog open={form.open} onOpenChange={(open) => setForm((f) => ({ ...f, open }))}>
         <DialogContent>
           {form.open && (
-            <UserForm key={form.user?.id ?? "new"} user={form.user} selfId={me.id} onDone={() => setForm({ open: false })} />
+            <UserForm
+              key={form.user?.id ?? "new"}
+              user={form.user}
+              selfId={me.id}
+              takenPersonIds={users.filter((u) => u.id !== form.user?.id && u.personId != null).map((u) => u.personId!)}
+              onDone={() => setForm({ open: false })}
+            />
           )}
         </DialogContent>
       </Dialog>
@@ -126,8 +133,39 @@ export function UsersPage({ users }: { users: User[] }) {
   );
 }
 
-function UserForm({ user, selfId, onDone }: { user?: User | null; selfId: Id; onDone: () => void }) {
+function LinkedPerson({
+  personId,
+  role,
+  person,
+  shepherdOf,
+}: {
+  personId: Id | null;
+  role: Role;
+  person: ReturnType<typeof useStore>["person"];
+  shepherdOf: ReturnType<typeof useStore>["shepherdOf"];
+}) {
+  const p = person(personId);
+  if (!p) {
+    return (
+      <p className={role === "berger" ? "text-xs font-semibold text-amber-700" : "text-xs text-[#59677e]"}>
+        {role === "berger" ? "⚠ Aucune fiche membre reliée : ce berger ne gère aucun groupe." : "Aucune fiche membre reliée"}
+      </p>
+    );
+  }
+  const leads = shepherdOf(p.id);
+  return (
+    <p className="text-xs text-[#59677e]">
+      ♙ Fiche : {p.first} {p.last}
+      {role === "berger" && (leads.length ? ` · Berger de ${leads.map((g) => g.name).join(", ")}` : " · Berger d’aucun groupe")}
+    </p>
+  );
+}
+
+function UserForm({ user, selfId, takenPersonIds, onDone }: { user?: User | null; selfId: Id; takenPersonIds: Id[]; onDone: () => void }) {
+  const { data, group } = useStore();
   const [role, setRole] = React.useState<Role>(user?.role ?? "membre");
+  const [personId, setPersonId] = React.useState<string>(user?.personId != null ? String(user.personId) : "none");
+  const people = data.people.filter((p) => !takenPersonIds.includes(p.id));
   const [active, setActive] = React.useState(user?.active ?? true);
   const [saving, setSaving] = React.useState(false);
   const isSelf = user?.id === selfId;
@@ -143,6 +181,7 @@ function UserForm({ user, selfId, onDone }: { user?: User | null; selfId: Id; on
       password: f.get("password"),
       role,
       active,
+      personId: personId !== "none" ? Number(personId) : null,
     }).catch(() => ({ ok: false as const, error: "Connexion au serveur impossible." }));
     setSaving(false);
     if (!r.ok) return toast.error(r.error);
@@ -184,6 +223,25 @@ function UserForm({ user, selfId, onDone }: { user?: User | null; selfId: Id; on
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">{isSelf ? "Vous ne pouvez pas modifier votre propre rôle." : ROLE_HELP[role]}</p>
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor="u_person">Fiche membre reliée</Label>
+        <Select value={personId} onValueChange={setPersonId}>
+          <SelectTrigger id="u_person">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Aucune fiche</SelectItem>
+            {people.map((p) => (
+              <SelectItem key={p.id} value={String(p.id)}>
+                {p.first} {p.last} — {group(p.groupId)?.name ?? "Sans groupe"}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Un berger gère les groupes dont cette fiche est le berger (à définir dans « Groupes »).
+        </p>
       </div>
       <label className="flex items-center gap-2 text-sm">
         <Checkbox checked={active} disabled={isSelf} onCheckedChange={(v) => setActive(v === true)} />

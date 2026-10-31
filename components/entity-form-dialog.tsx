@@ -9,8 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useStore } from "@/lib/store";
-import { today } from "@/lib/format";
-import type { AsdEvent, CollectionKey, Id, Prayer, Testimony } from "@/lib/types";
+import { Paperclip, Undo2, X } from "lucide-react";
+import { fmtSize, today } from "@/lib/format";
+import type { AsdEvent, CollectionKey, Doc, Id, Person, Prayer, Testimony } from "@/lib/types";
 
 const LABELS: Record<CollectionKey, string> = {
   groups: "groupe",
@@ -21,7 +22,8 @@ const LABELS: Record<CollectionKey, string> = {
   testimonies: "témoignage",
 };
 
-const MAX_FILE = 3 * 1024 * 1024;
+const MAX_FILE = 4 * 1024 * 1024;
+const MAX_FILES = 10;
 
 export function EntityFormDialog({
   type,
@@ -56,21 +58,49 @@ function Field({ label, name, required, children }: { label: string; name: strin
 }
 
 function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id | null; onDone: () => void }) {
-  const { data, isBerger, upsert, saveDoc, group, canEditOwn } = useStore();
+  const { data, isAdmin, isBerger, upsert, saveDoc, group, canEditOwn, canManageGroup, canManagePerson, managedGroups } = useStore();
   const old = itemId ? (data[type] as { id: Id }[]).find((x) => x.id === itemId) : undefined;
   const o = (old ?? {}) as Record<string, unknown>;
   const str = (k: string) => (o[k] as string | undefined) ?? "";
 
+  // Groupes proposés : tous pour les prières/témoignages, sinon uniquement ceux que l’on gère
+  const groupOptions = type === "prayers" || type === "testimonies" ? data.groups : managedGroups;
+
   // Un membre peut être créé sans groupe ; les autres éléments en exigent un
+  // "none" = membre sans groupe ; "all" = événement commun à tous les groupes (admin)
   const [groupId, setGroupId] = React.useState<string>(
-    o.groupId != null ? String(o.groupId) : type === "people" && !itemId ? "none" : String(data.groups[0]?.id ?? "")
+    o.groupId != null
+      ? String(o.groupId)
+      : type === "people" && !itemId
+        ? "none"
+        : (type === "events" && itemId) || (type === "docs" && isAdmin)
+          ? "all"
+          : String(groupOptions[0]?.id ?? "")
   );
+  // Documents : fichiers existants à retirer et nouveaux fichiers à envoyer
+  const existingFiles = type === "docs" ? ((old as Doc | undefined)?.files ?? []) : [];
+  const [removed, setRemoved] = React.useState<Id[]>([]);
+  const [newFiles, setNewFiles] = React.useState<File[]>([]);
+  const [progress, setProgress] = React.useState<string | null>(null);
   const [shepherdId, setShepherdId] = React.useState<string>(o.shepherdId != null ? String(o.shepherdId) : "none");
   const [prayerId, setPrayerId] = React.useState<string>(o.prayerId ? String(o.prayerId) : "none");
   const [saving, setSaving] = React.useState(false);
 
-  // Un membre peut ajouter des prières/témoignages et modifier les siens
-  const allowed = isBerger || ((type === "prayers" || type === "testimonies") && (!old || canEditOwn(old as Prayer | Testimony)));
+  const oldGroup = o.groupId as Id | null | undefined;
+  const allowed =
+    type === "prayers" || type === "testimonies"
+      ? !old || canEditOwn(old as Prayer | Testimony)
+      : type === "groups"
+        ? old
+          ? canManageGroup(old.id)
+          : isAdmin
+        : type === "people"
+          ? old
+            ? canManagePerson(old as Person)
+            : isBerger
+          : old
+            ? canManageGroup(oldGroup)
+            : managedGroups.length > 0;
 
   // Prières exaucées proposées pour le lien : même groupe que le témoignage (ou déjà liée)
   const linkablePrayers = data.prayers.filter(
@@ -101,23 +131,26 @@ function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id |
     setSaving(true);
     let r;
     if (type === "docs") {
-      const file = form.get("upload") as File | null;
-      if (file && file.size > MAX_FILE) {
+      const kept = existingFiles.length - removed.length;
+      if (kept + newFiles.length === 0) {
         setSaving(false);
-        return toast.error("Fichier trop volumineux (max. 3 Mo).");
+        return toast.error("Joignez au moins un fichier.");
       }
-      if (!itemId && !file?.size) {
+      if (kept + newFiles.length > MAX_FILES) {
         setSaving(false);
-        return toast.error("Veuillez joindre un fichier.");
+        return toast.error(`Un document peut contenir au plus ${MAX_FILES} fichiers.`);
       }
-      if (itemId) form.set("id", String(itemId));
-      form.set("groupId", groupId);
-      r = await saveDoc(form);
+      r = await saveDoc(
+        { id: itemId ?? null, title: form.get("title"), desc: form.get("desc"), groupId: groupId === "all" ? null : Number(groupId), removeFileIds: removed },
+        newFiles,
+        (done, total) => setProgress(`Envoi ${done}/${total}…`)
+      );
+      setProgress(null);
     } else {
       const obj: Record<string, unknown> = Object.fromEntries(form.entries());
       obj.id = itemId ?? null;
       if (type === "groups") obj.shepherdId = shepherdId !== "none" ? Number(shepherdId) : null;
-      else obj.groupId = groupId !== "none" ? Number(groupId) : null;
+      else obj.groupId = groupId !== "none" && groupId !== "all" ? Number(groupId) : null;
       if (type === "testimonies") obj.prayerId = prayerId !== "none" ? Number(prayerId) : null;
       r = await upsert(type, obj);
     }
@@ -136,7 +169,8 @@ function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id |
         </SelectTrigger>
         <SelectContent>
           {optionalGroup && <SelectItem value="none">Aucun groupe</SelectItem>}
-          {data.groups.map((g) => (
+          {(type === "events" || type === "docs") && isAdmin && <SelectItem value="all">🌐 Tous les groupes</SelectItem>}
+          {groupOptions.map((g) => (
             <SelectItem key={g.id} value={String(g.id)}>
               {g.name}
             </SelectItem>
@@ -176,25 +210,31 @@ function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id |
           {text("Nom", "name", true)}
           {text("Objectif", "goal", true)}
           {area("Description", "desc")}
-          <Field label="Berger responsable" name="shepherdId">
-            <Select value={shepherdId} onValueChange={setShepherdId}>
-              <SelectTrigger id="f_shepherdId">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Aucun berger désigné</SelectItem>
-                {data.people.map((p) => (
-                  <SelectItem key={p.id} value={String(p.id)}>
-                    {p.first} {p.last}
-                    {p.groupId != null && p.groupId !== itemId ? ` — ${group(p.groupId)?.name ?? ""}` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              Un berger est d’abord un membre : créez sa fiche dans « Membres » s’il n’apparaît pas ici.
+          {!isAdmin ? (
+            <p className="rounded-lg bg-accent px-3 py-2.5 text-xs leading-relaxed text-primary">
+              Seul un administrateur peut changer le berger de ce groupe.
             </p>
-          </Field>
+          ) : (
+            <Field label="Berger responsable" name="shepherdId">
+              <Select value={shepherdId} onValueChange={setShepherdId}>
+                <SelectTrigger id="f_shepherdId">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Aucun berger désigné</SelectItem>
+                  {data.people.map((p) => (
+                    <SelectItem key={p.id} value={String(p.id)}>
+                      {p.first} {p.last}
+                      {p.groupId != null && p.groupId !== itemId ? ` — ${group(p.groupId)?.name ?? ""}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Un berger est d’abord un membre : créez sa fiche dans « Membres » s’il n’apparaît pas ici.
+              </p>
+            </Field>
+          )}
         </>
       )}
 
@@ -225,9 +265,41 @@ function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id |
           {text("Titre", "title", true)}
           {area("Description", "desc")}
           {GroupSelect}
-          <Field label={`Fichier ou image${itemId ? " (facultatif pour conserver l’existant)" : ""}`} name="upload">
-            <Input id="f_upload" name="upload" type="file" accept="image/*,.pdf,.doc,.docx,.txt,.xlsx" />
-            {str("fileName") && <p className="text-xs text-muted-foreground">Fichier actuel : {str("fileName")}</p>}
+          <Field label="Fichiers ou images" name="upload" required>
+            {(existingFiles.length > 0 || newFiles.length > 0) && (
+              <ul className="grid gap-1.5">
+                {existingFiles.map((f) => {
+                  const isRemoved = removed.includes(f.id);
+                  return (
+                    <FileRow
+                      key={f.id}
+                      name={f.fileName}
+                      size={f.size}
+                      struck={isRemoved}
+                      action={isRemoved ? "Garder" : "Retirer"}
+                      onAction={() => setRemoved((r) => (isRemoved ? r.filter((x) => x !== f.id) : [...r, f.id]))}
+                    />
+                  );
+                })}
+                {newFiles.map((f, i) => (
+                  <FileRow key={`new-${i}`} name={f.name} size={f.size} isNew action="Retirer" onAction={() => setNewFiles((l) => l.filter((_, j) => j !== i))} />
+                ))}
+              </ul>
+            )}
+            <Input
+              id="f_upload"
+              type="file"
+              multiple
+              accept="image/*,.pdf,.doc,.docx,.txt,.xlsx,.pptx"
+              onChange={(e) => {
+                const picked = Array.from(e.target.files ?? []);
+                e.target.value = ""; // permet d’ajouter d’autres fichiers ensuite
+                const tooBig = picked.filter((f) => f.size > MAX_FILE);
+                if (tooBig.length) toast.error(`Trop volumineux (max. 4 Mo) : ${tooBig.map((f) => f.name).join(", ")}`);
+                setNewFiles((l) => [...l, ...picked.filter((f) => f.size <= MAX_FILE)]);
+              }}
+            />
+            <p className="text-xs text-muted-foreground">Plusieurs fichiers possibles (jusqu’à {MAX_FILES}, 4 Mo chacun).</p>
           </Field>
         </>
       )}
@@ -266,10 +338,44 @@ function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id |
           Annuler
         </Button>
         <Button type="submit" disabled={saving}>
-          {saving ? "Enregistrement…" : "Enregistrer"}
+          {saving ? (progress ?? "Enregistrement…") : "Enregistrer"}
         </Button>
       </DialogFooter>
     </form>
   );
 }
 
+
+function FileRow({
+  name,
+  size,
+  struck,
+  isNew,
+  action,
+  onAction,
+}: {
+  name: string;
+  size: number;
+  struck?: boolean;
+  isNew?: boolean;
+  action: string;
+  onAction: () => void;
+}) {
+  return (
+    <li className="flex items-center gap-2 rounded-lg border bg-background px-2.5 py-1.5 text-xs">
+      <Paperclip className="size-3.5 shrink-0 text-primary" />
+      <span className={`min-w-0 flex-1 truncate ${struck ? "text-muted-foreground line-through" : ""}`}>{name}</span>
+      {isNew && <span className="shrink-0 rounded bg-accent px-1.5 py-0.5 text-[10px] font-bold text-primary">Nouveau</span>}
+      <span className="shrink-0 text-muted-foreground">{fmtSize(size)}</span>
+      <button
+        type="button"
+        onClick={onAction}
+        title={`${action} ${name}`}
+        aria-label={`${action} ${name}`}
+        className="grid size-6 shrink-0 cursor-pointer place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+      >
+        {struck ? <Undo2 className="size-3.5" /> : <X className="size-3.5" />}
+      </button>
+    </li>
+  );
+}

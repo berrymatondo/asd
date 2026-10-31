@@ -14,6 +14,8 @@ export interface SessionUser {
   name: string;
   email: string;
   role: Role;
+  /** Fiche membre reliée au compte */
+  personId: Id | null;
 }
 
 export interface User extends SessionUser {
@@ -46,21 +48,28 @@ export interface AsdEvent {
   date: string;
   start: string;
   end: string;
-  groupId: Id;
+  /** null = événement commun à tous les groupes (créé par un admin) */
+  groupId: Id | null;
   locked: boolean;
   attendance: Record<string, boolean>;
   summary?: string;
 }
 
-/** Le contenu du fichier reste en base ; il se télécharge via /api/documents/[id]. */
+/** Le contenu reste en base ; chaque fichier se télécharge via /api/documents/fichiers/[id]. */
+export interface DocFile {
+  id: Id;
+  fileName: string;
+  mimeType: string;
+  size: number;
+}
+
 export interface Doc {
   id: Id;
   title: string;
   desc: string;
-  fileName: string;
-  mimeType: string;
-  size: number;
-  groupId: Id;
+  /** null = document partagé avec tous les groupes (créé par un admin) */
+  groupId: Id | null;
+  files: DocFile[];
 }
 
 export interface Prayer {
@@ -99,3 +108,6 @@ export type ItemOf<K extends CollectionKey> = AppData[K][number];
 export type Result = { ok: true } | { ok: false; error: string };
 
 export const isManager = (role?: Role | null) => role === "admin" || role === "berger";
+
+/** Groupes gérables : tous (admin) ou ceux dont la fiche du compte est le berger. */
+export type Managed = "all" | Id[];

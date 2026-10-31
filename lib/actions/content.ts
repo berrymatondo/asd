@@ -1,26 +1,51 @@
 "use server";
 
-import { assertUser } from "@/lib/auth";
+import { assertUser, getManaged, manages } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { isManager, type CollectionKey, type Result, type SessionUser } from "@/lib/types";
+import type { CollectionKey, Managed, Result, SessionUser } from "@/lib/types";
 import { date, id, mutation, optionalId, required, text, time, ValidationError } from "@/lib/validate";
 
 type Input = Record<string, unknown>;
 const MANAGERS = ["admin", "berger"] as const;
-const MAX_FILE = 3 * 1024 * 1024;
+const MAX_FILE = 4 * 1024 * 1024;
+const MAX_FILES = 10;
+const OUT_OF_SCOPE = "Vous ne gérez pas ce groupe : seul son berger ou un administrateur le peut.";
+
+/** Utilisateur admin/berger et ses groupes gérés. */
+async function manager() {
+  const user = await assertUser([...MANAGERS]);
+  return { user, managed: await getManaged(user) };
+}
+
+function assertManages(managed: Managed, groupId: number | null | undefined) {
+  if (!manages(managed, groupId)) throw new ValidationError(OUT_OF_SCOPE);
+}
+
+/** Fiches modifiables par un berger : membres de ses groupes ou sans groupe. */
+const managesPerson = (managed: Managed, groupId: number | null) => groupId == null || manages(managed, groupId);
 
 // ---------- Groupes ----------
 export async function saveGroup(input: Input): Promise<Result> {
   return mutation(async () => {
-    await assertUser([...MANAGERS]);
+    const { user, managed } = await manager();
     const v = {
       name: required(input.name, "Nom", 120),
       goal: required(input.goal, "Objectif", 300),
       desc: text(input.desc),
       shepherdId: optionalId(input.shepherdId),
     };
-    if (v.shepherdId && !(await db()`select 1 from people where id=${v.shepherdId}`).length) return "Le berger choisi n’existe plus.";
     const gid = optionalId(input.id);
+    const isAdmin = user.role === "admin";
+
+    if (!isAdmin) {
+      // Seul l’admin crée un groupe et choisit son berger ; le berger modifie les groupes qu’il mène
+      if (!gid) return "Seul un administrateur peut créer un groupe.";
+      assertManages(managed, gid);
+      await db()`update groups set name=${v.name}, goal=${v.goal}, description=${v.desc} where id=${gid}`;
+      return;
+    }
+
+    if (v.shepherdId && !(await db()`select 1 from people where id=${v.shepherdId}`).length) return "Le berger choisi n’existe plus.";
     if (gid) {
       const r = await db()`update groups set name=${v.name}, goal=${v.goal}, description=${v.desc}, shepherd_id=${v.shepherdId} where id=${gid} returning id`;
       if (!r.length) return "Groupe introuvable.";
@@ -33,7 +58,7 @@ export async function saveGroup(input: Input): Promise<Result> {
 // ---------- Membres (fiches privées) ----------
 export async function savePerson(input: Input): Promise<Result> {
   return mutation(async () => {
-    await assertUser([...MANAGERS]);
+    const { managed } = await manager();
     const v = {
       first: required(input.first, "Prénom", 80),
       last: text(input.last, 80),
@@ -41,11 +66,13 @@ export async function savePerson(input: Input): Promise<Result> {
       groupId: optionalId(input.groupId),
       notes: text(input.notes, 5000),
     };
+    if (!managesPerson(managed, v.groupId)) throw new ValidationError(OUT_OF_SCOPE);
     const pid = optionalId(input.id);
     if (pid) {
-      const r = await db()`update people set first_name=${v.first}, last_name=${v.last}, phone=${v.phone}, group_id=${v.groupId}, notes=${v.notes}
-                          where id=${pid} returning id`;
-      if (!r.length) return "Membre introuvable.";
+      const [p] = await db()`select group_id from people where id=${pid}`;
+      if (!p) return "Membre introuvable.";
+      if (!managesPerson(managed, p.group_id)) return "Ce membre appartient à un groupe que vous ne gérez pas.";
+      await db()`update people set first_name=${v.first}, last_name=${v.last}, phone=${v.phone}, group_id=${v.groupId}, notes=${v.notes} where id=${pid}`;
     } else {
       await db()`insert into people (first_name, last_name, phone, group_id, notes) values (${v.first}, ${v.last}, ${v.phone}, ${v.groupId}, ${v.notes})`;
     }
@@ -55,19 +82,23 @@ export async function savePerson(input: Input): Promise<Result> {
 // ---------- Événements ----------
 export async function saveEvent(input: Input): Promise<Result> {
   return mutation(async () => {
-    await assertUser([...MANAGERS]);
+    const { managed } = await manager();
     const v = {
       title: required(input.title, "Titre", 200),
-      groupId: id(input.groupId, "Groupe"),
+      // Sans groupe = événement commun à tous les groupes (admin uniquement)
+      groupId: optionalId(input.groupId),
       date: date(input.date),
       start: time(input.start, "Heure de début"),
       end: time(input.end, "Heure de fin"),
     };
+    if (v.groupId == null && managed !== "all") return "Seul un administrateur peut créer un événement pour tous les groupes.";
+    assertManages(managed, v.groupId);
     if (v.end <= v.start) return "L’heure de fin doit être après le début.";
     const eid = optionalId(input.id);
     if (eid) {
-      const [ev] = await db()`select locked from events where id=${eid}`;
+      const [ev] = await db()`select locked, group_id from events where id=${eid}`;
       if (!ev) return "Événement introuvable.";
+      assertManages(managed, ev.group_id);
       if (ev.locked) return "Cet événement est verrouillé.";
       await db()`update events set title=${v.title}, group_id=${v.groupId}, date=${v.date}, start_time=${v.start}, end_time=${v.end} where id=${eid}`;
     } else {
@@ -76,78 +107,115 @@ export async function saveEvent(input: Input): Promise<Result> {
   });
 }
 
+/** Charge un événement et vérifie que l’utilisateur gère son groupe. */
+async function managedEvent(eventId: number) {
+  const { managed } = await manager();
+  const eid = id(eventId);
+  const [ev] = await db()`select locked, group_id from events where id=${eid}`;
+  if (!ev) throw new ValidationError("Événement introuvable.");
+  assertManages(managed, ev.group_id);
+  return { eid, locked: ev.locked as boolean, groupId: ev.group_id as number | null };
+}
+
 export async function toggleEventLock(eventId: number): Promise<Result & { locked?: boolean }> {
   let locked: boolean | undefined;
   const r = await mutation(async () => {
-    await assertUser([...MANAGERS]);
-    const rows = await db()`update events set locked = not locked where id=${id(eventId)} returning locked`;
-    if (!rows.length) return "Événement introuvable.";
-    locked = rows[0].locked as boolean;
+    const { eid } = await managedEvent(eventId);
+    const rows = await db()`update events set locked = not locked where id=${eid} returning locked`;
+    locked = rows[0]?.locked as boolean;
   });
   return r.ok ? { ...r, locked } : r;
 }
 
 export async function saveEventFollowup(eventId: number, summary: string, attendance: Record<string, boolean>): Promise<Result> {
   return mutation(async () => {
-    await assertUser([...MANAGERS]);
-    const eid = id(eventId);
-    const [ev] = await db()`select locked, group_id from events where id=${eid}`;
-    if (!ev) return "Événement introuvable.";
+    const ev = await managedEvent(eventId);
     if (ev.locked) return "Cet événement est verrouillé.";
     // Ne garder que les présences des membres du groupe de l’événement
-    const members = await db()`select id from people where group_id=${ev.group_id}`;
+    // Événement commun : tous les membres sont concernés
+    const members = await db()`select id from people where ${ev.groupId}::int is null or group_id=${ev.groupId}`;
     const clean: Record<string, boolean> = {};
     for (const m of members) clean[String(m.id)] = attendance?.[String(m.id)] === true;
     // Défense en profondeur : le HTML est aussi nettoyé à l’affichage
     const html = text(summary, 200_000).replace(/<\s*(script|style|iframe|object|embed)[\s\S]*?<\s*\/\s*\1\s*>/gi, "");
-    await db()`update events set summary=${html}, attendance=${JSON.stringify(clean)}::jsonb where id=${eid}`;
+    await db()`update events set summary=${html}, attendance=${JSON.stringify(clean)}::jsonb where id=${ev.eid}`;
   });
 }
 
 // ---------- Documents ----------
-export async function saveDocument(form: FormData): Promise<Result> {
-  return mutation(async () => {
-    await assertUser([...MANAGERS]);
+/**
+ * Enregistre les informations d’un document et retire les fichiers demandés.
+ * Les nouveaux fichiers sont envoyés ensuite un par un (uploadDocumentFile),
+ * ce qui évite les limites de taille d’une requête unique.
+ */
+export async function saveDocument(input: Input): Promise<Result & { id?: number }> {
+  let docId: number | undefined;
+  const r = await mutation(async () => {
+    const { managed } = await manager();
     const v = {
-      title: required(form.get("title"), "Titre", 200),
-      desc: text(form.get("desc")),
-      groupId: id(form.get("groupId"), "Groupe"),
+      title: required(input.title, "Titre", 200),
+      desc: text(input.desc),
+      // Sans groupe = document partagé avec tous les groupes (admin uniquement)
+      groupId: optionalId(input.groupId),
     };
-    const did = optionalId(form.get("id"));
-    const file = form.get("upload");
-    const hasFile = file instanceof File && file.size > 0;
-    if (hasFile && file.size > MAX_FILE) return "Fichier trop volumineux (max. 3 Mo).";
-    if (!did && !hasFile) return "Veuillez joindre un fichier.";
-
-    if (hasFile) {
-      const hex = Buffer.from(await file.arrayBuffer()).toString("hex");
-      const name = text(file.name, 255) || "document";
-      const mime = text(file.type, 120) || "application/octet-stream";
-      if (did) {
-        const r = await db()`update documents set title=${v.title}, description=${v.desc}, group_id=${v.groupId},
-                              file_name=${name}, mime_type=${mime}, size=${file.size}, content=decode(${hex}, 'hex')
-                            where id=${did} returning id`;
-        if (!r.length) return "Document introuvable.";
-      } else {
-        await db()`insert into documents (title, description, group_id, file_name, mime_type, size, content)
-                   values (${v.title}, ${v.desc}, ${v.groupId}, ${name}, ${mime}, ${file.size}, decode(${hex}, 'hex'))`;
-      }
+    if (v.groupId == null && managed !== "all") return "Seul un administrateur peut partager un document avec tous les groupes.";
+    assertManages(managed, v.groupId);
+    const removeIds = Array.isArray(input.removeFileIds) ? input.removeFileIds.map((x) => id(x)) : [];
+    const did = optionalId(input.id);
+    if (did) {
+      const [d] = await db()`select group_id from documents where id=${did}`;
+      if (!d) return "Document introuvable.";
+      assertManages(managed, d.group_id);
+      const sql = db();
+      await sql.transaction([
+        sql`update documents set title=${v.title}, description=${v.desc}, group_id=${v.groupId} where id=${did}`,
+        sql`delete from document_files where document_id=${did} and id = any(${removeIds}::int[])`,
+      ]);
+      docId = did;
     } else {
-      const r = await db()`update documents set title=${v.title}, description=${v.desc}, group_id=${v.groupId} where id=${did} returning id`;
-      if (!r.length) return "Document introuvable.";
+      const [row] = await db()`insert into documents (title, description, group_id) values (${v.title}, ${v.desc}, ${v.groupId}) returning id`;
+      docId = row.id as number;
     }
+  });
+  return r.ok ? { ...r, id: docId } : r;
+}
+
+export async function uploadDocumentFile(documentId: number, form: FormData): Promise<Result> {
+  return mutation(async () => {
+    const { managed } = await manager();
+    const did = id(documentId);
+    const [d] = await db()`select group_id, (select count(*)::int from document_files where document_id=${did}) as n from documents where id=${did}`;
+    if (!d) return "Document introuvable.";
+    assertManages(managed, d.group_id);
+    if (d.n >= MAX_FILES) return `Un document peut contenir au plus ${MAX_FILES} fichiers.`;
+
+    const file = form.get("file");
+    if (!(file instanceof File) || file.size === 0) return "Fichier vide.";
+    if (file.size > MAX_FILE) return `« ${file.name} » dépasse 4 Mo.`;
+    const b64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+    const name = text(file.name, 255) || "fichier";
+    const mime = text(file.type, 120) || "application/octet-stream";
+    await db()`insert into document_files (document_id, file_name, mime_type, size, content, position)
+               values (${did}, ${name}, ${mime}, ${file.size}, decode(${b64}, 'base64'),
+                       (select coalesce(max(position), 0) + 1 from document_files where document_id=${did}))`;
   });
 }
 
 // ---------- Prières & témoignages ----------
-/** Un membre ne peut modifier/supprimer que ce qu’il a lui-même publié. */
-async function assertCanEditOwn(table: "prayers" | "testimonies", itemId: number, user: SessionUser) {
+/**
+ * Modifier/supprimer une prière ou un témoignage : son auteur, le berger de son groupe, ou un admin.
+ * Le berger qui modifie la publication d’un autre ne peut la déplacer que vers un de ses groupes.
+ */
+async function assertCanEdit(table: "prayers" | "testimonies", itemId: number, user: SessionUser, newGroupId?: number) {
   const rows =
     table === "prayers"
-      ? await db()`select created_by from prayers where id=${itemId}`
-      : await db()`select created_by from testimonies where id=${itemId}`;
+      ? await db()`select created_by, group_id from prayers where id=${itemId}`
+      : await db()`select created_by, group_id from testimonies where id=${itemId}`;
   if (!rows.length) throw new ValidationError("Élément introuvable.");
-  if (!isManager(user.role) && rows[0].created_by !== user.id) throw new ValidationError("Vous ne pouvez modifier que vos propres publications.");
+  if (rows[0].created_by === user.id) return;
+  const managed = await getManaged(user);
+  if (!manages(managed, rows[0].group_id) || (newGroupId != null && !manages(managed, newGroupId)))
+    throw new ValidationError("Vous ne pouvez modifier que vos publications ou celles des groupes que vous gérez.");
 }
 
 export async function savePrayer(input: Input): Promise<Result> {
@@ -161,7 +229,7 @@ export async function savePrayer(input: Input): Promise<Result> {
     };
     const pid = optionalId(input.id);
     if (pid) {
-      await assertCanEditOwn("prayers", pid, user);
+      await assertCanEdit("prayers", pid, user, v.groupId);
       await db()`update prayers set author=${v.author}, group_id=${v.groupId}, date=${v.date}, description=${v.desc} where id=${pid}`;
       // Les témoignages liés doivent rester dans le même groupe
       await db()`update testimonies set prayer_id=null where prayer_id=${pid} and group_id <> ${v.groupId}`;
@@ -187,7 +255,7 @@ export async function saveTestimony(input: Input): Promise<Result> {
     }
     const tid = optionalId(input.id);
     if (tid) {
-      await assertCanEditOwn("testimonies", tid, user);
+      await assertCanEdit("testimonies", tid, user, v.groupId);
       await db()`update testimonies set author=${v.author}, group_id=${v.groupId}, date=${v.date}, description=${v.desc}, prayer_id=${v.prayerId} where id=${tid}`;
     } else {
       await db()`insert into testimonies (author, group_id, date, description, prayer_id, created_by)
@@ -198,16 +266,17 @@ export async function saveTestimony(input: Input): Promise<Result> {
 
 export async function toggleAnswered(kind: "prayers" | "testimonies", itemId: number): Promise<Result> {
   return mutation(async () => {
-    await assertUser([...MANAGERS]);
+    const { managed } = await manager();
     const iid = id(itemId);
+    const [row] = kind === "prayers" ? await db()`select group_id from prayers where id=${iid}` : await db()`select group_id from testimonies where id=${iid}`;
+    if (!row) return "Élément introuvable.";
+    assertManages(managed, row.group_id);
     if (kind === "prayers") {
       const [p] = await db()`update prayers set answered = not answered where id=${iid} returning answered`;
-      if (!p) return "Élément introuvable.";
       // Une prière repassée « non exaucée » ne peut plus être liée à un témoignage
       if (!p.answered) await db()`update testimonies set prayer_id=null where prayer_id=${iid}`;
     } else {
-      const r = await db()`update testimonies set answered = not answered where id=${iid} returning id`;
-      if (!r.length) return "Élément introuvable.";
+      await db()`update testimonies set answered = not answered where id=${iid}`;
     }
   });
 }
@@ -220,17 +289,19 @@ export async function deleteItem(kind: CollectionKey, itemId: number): Promise<R
     const sql = db();
 
     if (kind === "prayers" || kind === "testimonies") {
-      await assertCanEditOwn(kind, iid, user);
+      await assertCanEdit(kind, iid, user);
       // ON DELETE SET NULL délie automatiquement les témoignages d’une prière supprimée
       if (kind === "prayers") await sql`delete from prayers where id=${iid}`;
       else await sql`delete from testimonies where id=${iid}`;
       return;
     }
 
-    if (!isManager(user.role)) return "Action réservée au berger.";
+    if (user.role === "membre") return "Action réservée au berger.";
+    const managed = await getManaged(user);
 
     switch (kind) {
       case "groups": {
+        if (managed !== "all") return "Seul un administrateur peut supprimer un groupe.";
         const [{ n }] = await sql`
           select (select count(*) from people where group_id=${iid}) + (select count(*) from events where group_id=${iid})
                + (select count(*) from documents where group_id=${iid}) + (select count(*) from prayers where group_id=${iid})
@@ -239,21 +310,33 @@ export async function deleteItem(kind: CollectionKey, itemId: number): Promise<R
         await sql`delete from groups where id=${iid}`;
         return;
       }
-      case "people":
+      case "people": {
+        const [p] = await sql`select group_id, (select count(*)::int from groups where shepherd_id=${iid}) as leads from people where id=${iid}`;
+        if (!p) return "Membre introuvable.";
+        if (managed !== "all") {
+          // Un berger ne supprime ni un membre d’un autre groupe, ni une fiche de berger (la sienne comprise)
+          if (p.group_id == null || !manages(managed, p.group_id)) return "Vous ne pouvez supprimer que les membres de vos groupes.";
+          if (p.leads > 0) return "Cette fiche est celle d’un berger : seul un administrateur peut la supprimer.";
+        }
         await sql.transaction([
           sql`update events set attendance = attendance - ${String(iid)} where attendance ? ${String(iid)}`,
           sql`delete from people where id=${iid}`,
         ]);
         return;
+      }
       case "events": {
-        const [ev] = await sql`select locked from events where id=${iid}`;
-        if (ev?.locked) return "Débloquez cet événement avant de le supprimer.";
+        const ev = await managedEvent(iid);
+        if (ev.locked) return "Débloquez cet événement avant de le supprimer.";
         await sql`delete from events where id=${iid}`;
         return;
       }
-      case "docs":
+      case "docs": {
+        const [d] = await sql`select group_id from documents where id=${iid}`;
+        if (!d) return "Document introuvable.";
+        assertManages(managed, d.group_id);
         await sql`delete from documents where id=${iid}`;
         return;
+      }
     }
   });
 }

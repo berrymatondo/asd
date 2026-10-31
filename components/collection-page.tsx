@@ -8,6 +8,7 @@ import {
   Check,
   Download,
   FileDown,
+  Paperclip,
   Link2,
   Lock,
   LockOpen,
@@ -28,7 +29,7 @@ import { EntityFormDialog } from "@/components/entity-form-dialog";
 import { EventFollowupDialog } from "@/components/event-followup-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useStore } from "@/lib/store";
-import { fmtDate } from "@/lib/format";
+import { fileUrl, fmtDate, fmtSize, isPreviewable } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { AsdEvent, CollectionKey, Doc, Group, Id, Person, Prayer, Testimony } from "@/lib/types";
 
@@ -45,7 +46,7 @@ type AnyItem = Group | Person | AsdEvent | Doc | Prayer | Testimony;
 
 export function CollectionPage({ type }: { type: CollectionKey }) {
   const store = useStore();
-  const { data, isBerger } = store;
+  const { data, isBerger, isAdmin, user, managedGroups, canManagePerson } = store;
   const params = useSearchParams();
   const router = useRouter();
   const cfg = CONFIG[type];
@@ -72,12 +73,31 @@ export function CollectionPage({ type }: { type: CollectionKey }) {
   }, [params]);
 
   const items = (data[type] as AnyItem[]).filter((o) => {
+    // Un berger ne voit que les fiches qu’il gère (ses groupes et les membres sans groupe)
+    if (type === "people" && !canManagePerson(o as Person)) return false;
     const gid = type === "groups" ? o.id : (o as { groupId: Id | null }).groupId;
-    if (currentGroup === "none" ? gid != null : currentGroup !== "all" && String(gid) !== currentGroup) return false;
+    // Les événements et documents communs (sans groupe) apparaissent dans tous les groupes
+    const global = (type === "events" || type === "docs") && gid == null;
+    if (currentGroup === "none" ? gid != null : currentGroup !== "all" && !global && String(gid) !== currentGroup) return false;
     return JSON.stringify(o).toLowerCase().includes(search.toLowerCase());
   });
 
-  const canAdd = isBerger || type === "prayers" || type === "testimonies";
+  const canAdd =
+    type === "prayers" || type === "testimonies"
+      ? true
+      : type === "groups"
+        ? isAdmin
+        : type === "people"
+          ? isBerger
+          : managedGroups.length > 0;
+  // Berger sans groupe : on explique pourquoi il ne peut rien gérer
+  const notice =
+    user.role === "berger" && managedGroups.length === 0 && type !== "prayers" && type !== "testimonies"
+      ? user.personId
+        ? "Vous n’êtes berger d’aucun groupe pour le moment : demandez à un administrateur de vous désigner berger d’un groupe."
+        : "Votre compte n’est relié à aucune fiche membre : demandez à un administrateur de le relier pour gérer vos groupes."
+      : null;
+  const filterGroups = type === "people" ? managedGroups : data.groups;
 
   const askDelete = (id: Id) => {
     if (type === "events" && data.events.find((e) => e.id === id)?.locked)
@@ -115,6 +135,8 @@ export function CollectionPage({ type }: { type: CollectionKey }) {
         )}
       </div>
 
+      {notice && <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">{notice}</div>}
+
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="relative w-full sm:w-72">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -127,7 +149,7 @@ export function CollectionPage({ type }: { type: CollectionKey }) {
           <SelectContent>
             <SelectItem value="all">Tous les groupes</SelectItem>
             {type === "people" && <SelectItem value="none">Sans groupe</SelectItem>}
-            {data.groups.map((g) => (
+            {filterGroups.map((g) => (
               <SelectItem key={g.id} value={String(g.id)}>
                 {g.name}
               </SelectItem>
@@ -197,7 +219,7 @@ function ItemCard({
   onFollowup: () => void;
   onNavigate: (href: string) => void;
 }) {
-  const { data, isBerger, group, person, shepherdOf, toggleLock, toggleAnswered, canEditOwn } = useStore();
+  const { data, isBerger, isAdmin, group, person, shepherdOf, toggleLock, toggleAnswered, canEditOwn, canManageGroup } = useStore();
   let title: React.ReactNode = null;
   let desc: React.ReactNode = null;
   let meta: React.ReactNode = null;
@@ -238,11 +260,12 @@ function ItemCard({
         </button>
       </>
     );
-    if (isBerger)
+    // Le berger modifie ses groupes ; seul l’admin les supprime
+    if (canManageGroup(g.id))
       actions = (
         <>
           {editBtn}
-          {delBtn}
+          {isAdmin && delBtn}
         </>
       );
   }
@@ -258,10 +281,12 @@ function ItemCard({
         {group(p.groupId)?.name ?? "Sans groupe"} · {p.phone || "Téléphone non renseigné"}
       </>
     );
+    // Un berger ne supprime ni une fiche de berger, ni un membre sans groupe
+    const canDelete = isAdmin || (p.groupId != null && canManageGroup(p.groupId) && !leads.length);
     actions = (
       <>
         {editBtn}
-        {delBtn}
+        {canDelete && delBtn}
       </>
     );
   }
@@ -274,7 +299,7 @@ function ItemCard({
         {fmtDate(e.date)} · {e.start} – {e.end}
       </>
     );
-    meta = group(e.groupId)?.name;
+    meta = e.groupId == null ? "🌐 Tous les groupes" : group(e.groupId)?.name;
     badge = (
       <Badge variant={e.locked ? "pending" : "success"}>
         {e.locked ? (
@@ -291,7 +316,7 @@ function ItemCard({
         <Button variant="soft" size="sm" onClick={() => window.open(`/rapport/${e.id}`, "_blank", "noopener")}>
           <FileDown /> Rapport PDF
         </Button>
-        {isBerger && (
+        {canManageGroup(e.groupId) && (
           <>
             <Button variant="soft" size="sm" onClick={onFollowup}>
               <NotebookPen /> Synthèse & présences
@@ -323,25 +348,21 @@ function ItemCard({
     const d = item as Doc;
     title = <>📄 {d.title}</>;
     desc = d.desc;
+    const total = d.files.reduce((n, f) => n + f.size, 0);
     meta = (
       <>
-        {d.fileName || "Sans fichier"}
-        {d.size ? ` (${fmtSize(d.size)})` : ""} · {group(d.groupId)?.name}
+        {d.files.length} fichier{d.files.length > 1 ? "s" : ""}
+        {total ? ` · ${fmtSize(total)}` : ""} · {d.groupId == null ? "🌐 Tous les groupes" : group(d.groupId)?.name}
       </>
     );
-    actions = (
-      <>
-        <Button variant="soft" size="sm" onClick={() => downloadDoc(d)}>
-          <Download /> Télécharger
-        </Button>
-        {isBerger && (
-          <>
-            {editBtn}
-            {delBtn}
-          </>
-        )}
-      </>
-    );
+    linked = <DocFiles doc={d} />;
+    if (canManageGroup(d.groupId))
+      actions = (
+        <>
+          {editBtn}
+          {delBtn}
+        </>
+      );
   }
 
   if (type === "prayers" || type === "testimonies") {
@@ -379,14 +400,14 @@ function ItemCard({
       linked = <LinkedBanner text="Témoignage lié à une prière exaucée" button="Voir la prière" onClick={() => onNavigate(`/prieres?focus=${linkedPrayer.id}`)} />;
     }
 
-    if (!isBerger && canEditOwn(o))
+    if (canEditOwn(o))
       actions = (
         <>
           {editBtn}
           {delBtn}
         </>
       );
-    if (isBerger)
+    if (canManageGroup(o.groupId))
       actions = (
         <>
           <Button variant="soft" size="sm" onClick={() => toggleAnswered(type, o.id)}>
@@ -439,18 +460,46 @@ function LinkedBanner({ text, button, onClick }: { text: string; button: string;
   );
 }
 
-function downloadDoc(d: Doc) {
-  // Le fichier est servi par /api/documents/[id] (réservé aux utilisateurs connectés)
-  const a = document.createElement("a");
-  a.href = `/api/documents/${d.id}`;
-  a.download = d.fileName || "document";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
-
-function fmtSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} o`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} Mo`;
+function DocFiles({ doc }: { doc: Doc }) {
+  const images = doc.files.filter((f) => isPreviewable(f.mimeType));
+  const others = doc.files.filter((f) => !isPreviewable(f.mimeType));
+  if (!doc.files.length) return <p className="text-xs text-muted-foreground">Aucun fichier joint.</p>;
+  return (
+    <div className="grid gap-2">
+      {images.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          {images.map((f) => (
+            <div key={f.id} className="group relative aspect-square overflow-hidden rounded-lg border bg-muted">
+              <a href={fileUrl(f.id, true)} target="_blank" rel="noopener" title={`${f.fileName} (${fmtSize(f.size)}) — ouvrir`} className="block size-full">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={fileUrl(f.id, true)} alt={f.fileName} loading="lazy" className="size-full object-cover transition-transform group-hover:scale-105" />
+              </a>
+              <a
+                href={fileUrl(f.id)}
+                download={f.fileName}
+                title={`Télécharger ${f.fileName}`}
+                aria-label={`Télécharger ${f.fileName}`}
+                className="absolute right-1 bottom-1 grid size-7 place-items-center rounded-md bg-white/90 text-primary shadow-sm hover:bg-white"
+              >
+                <Download className="size-3.5" />
+              </a>
+            </div>
+          ))}
+        </div>
+      )}
+      {others.map((f) => (
+        <a
+          key={f.id}
+          href={fileUrl(f.id)}
+          download={f.fileName}
+          className="flex items-center gap-2 rounded-lg border bg-background px-2.5 py-2 text-xs hover:bg-accent/60"
+        >
+          <Paperclip className="size-3.5 shrink-0 text-primary" />
+          <span className="min-w-0 flex-1 truncate">{f.fileName}</span>
+          <span className="shrink-0 text-muted-foreground">{fmtSize(f.size)}</span>
+          <Download className="size-3.5 shrink-0 text-muted-foreground" />
+        </a>
+      ))}
+    </div>
+  );
 }

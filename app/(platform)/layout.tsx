@@ -5,9 +5,9 @@ import { StoreProvider } from "@/lib/store";
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const data = await getAppData(user);
+  const { data, managed } = await getAppData(user);
   return (
-    <StoreProvider data={data} user={user}>
+    <StoreProvider data={data} user={user} managed={managed}>
       <AppShell>{children}</AppShell>
     </StoreProvider>
   );

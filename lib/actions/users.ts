@@ -27,8 +27,15 @@ export async function saveUser(input: Record<string, unknown>): Promise<Result> 
       email: email(input.email),
       role: role(input.role),
       active: input.active !== false,
+      personId: optionalId(input.personId),
     };
     const uid = optionalId(input.id);
+    if (v.personId) {
+      const [p] = await db()`select (select name from users where person_id=${v.personId} and id <> ${uid ?? 0}) as owner
+                             from people where id=${v.personId}`;
+      if (!p) return "La fiche membre choisie n’existe plus.";
+      if (p.owner) return `Cette fiche est déjà reliée au compte de ${p.owner}.`;
+    }
     const newPassword = typeof input.password === "string" && input.password !== "" ? password(input.password) : null;
     const taken = await db()`select 1 from users where email=${v.email} and id <> ${uid ?? 0}`;
     if (taken.length) return "Cette adresse e-mail est déjà utilisée.";
@@ -36,7 +43,8 @@ export async function saveUser(input: Record<string, unknown>): Promise<Result> 
     if (!uid) {
       if (!newPassword) return "Un mot de passe est requis pour créer un compte.";
       const hash = await bcrypt.hash(newPassword, 10);
-      await db()`insert into users (name, email, password_hash, role, active) values (${v.name}, ${v.email}, ${hash}, ${v.role}, ${v.active})`;
+      await db()`insert into users (name, email, password_hash, role, active, person_id)
+                 values (${v.name}, ${v.email}, ${hash}, ${v.role}, ${v.active}, ${v.personId})`;
       return;
     }
 
@@ -47,7 +55,7 @@ export async function saveUser(input: Record<string, unknown>): Promise<Result> 
       return "Il doit rester au moins un administrateur actif.";
 
     const sql = db();
-    const queries = [sql`update users set name=${v.name}, email=${v.email}, role=${v.role}, active=${v.active} where id=${uid}`];
+    const queries = [sql`update users set name=${v.name}, email=${v.email}, role=${v.role}, active=${v.active}, person_id=${v.personId} where id=${uid}`];
     if (newPassword) queries.push(sql`update users set password_hash=${await bcrypt.hash(newPassword, 10)} where id=${uid}`);
     // Compte désactivé ou mot de passe réinitialisé : on ferme ses sessions ouvertes
     if (!v.active || (newPassword && uid !== me.id)) queries.push(sql`delete from sessions where user_id=${uid}`);
