@@ -1,4 +1,6 @@
-import { Document, Font, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
+import fs from "node:fs";
+import path from "node:path";
+import { Document, Font, Image, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
 import { fmtDate } from "@/lib/format";
 import { fmtRate, type ReportModel } from "./build";
 
@@ -30,6 +32,9 @@ const t = (s: string | number | null | undefined) =>
       return c === 10 || (c >= 32 && c <= 126) || (c >= 160 && c <= 255) || WINANSI_EXTRA.includes(ch);
     })
     .join("");
+
+// Contenu du fichier (un chemin Windows « C:\… » serait pris pour une URL)
+const LOGO = { data: fs.readFileSync(path.join(process.cwd(), "public", "logo.png")), format: "png" as const };
 
 // Pas de coupure de mots (« Modifi-able ») : un mot trop long passe simplement à la ligne
 Font.registerHyphenationCallback((word) => [word]);
@@ -169,10 +174,14 @@ function Kpis({ m }: { m: ReportModel }) {
 
 function Shell({ m, children }: { m: ReportModel; children: React.ReactNode }) {
   return (
-    <Document title={t(m.title)} author={t(m.generatedBy)} creator="ASD — Faiseur de disciples" language="fr">
+    <Document title={t(m.title)} author={t(m.generatedBy)} creator="Famille ASD — Faiseurs de disciples" language="fr">
       <Page size="A4" style={s.page}>
         <View style={s.topBar} fixed>
-          <Text style={s.topBrand}>ASD · Faiseur de disciples</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            {/* Logo rond (le PNG carré est découpé par le rayon de bordure) */}
+            <Image src={LOGO} style={{ width: 28, height: 28, borderRadius: 14 }} />
+            <Text style={s.topBrand}>Famille ASD · Faiseurs de disciples</Text>
+          </View>
           <Text style={s.topTitle}>{t(m.title)}</Text>
         </View>
         {children}

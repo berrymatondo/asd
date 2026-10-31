@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Logo } from "@/components/logo";
 
 function initials(name: string) {
   return (
@@ -30,10 +31,10 @@ function initials(name: string) {
 function Brand() {
   return (
     <div className="flex items-center gap-3">
-      <div className="grid size-10.5 shrink-0 place-items-center rounded-[13px] bg-primary text-2xl text-primary-foreground">✦</div>
+      <Logo className="size-11" priority />
       <div>
-        <b className="text-xl">ASD</b>
-        <small className="mt-0.5 block text-[11px] text-muted-foreground">Faiseur de disciples</small>
+        <b className="text-lg leading-tight">Famille ASD</b>
+        <small className="mt-0.5 block text-[11px] text-muted-foreground">Faiseurs de disciples</small>
       </div>
     </div>
   );
@@ -156,7 +157,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </SheetContent>
           </Sheet>
           <Link href="/" className="flex shrink-0 items-center" aria-label="Accueil ASD">
-            <span className="grid size-8 place-items-center rounded-[10px] bg-primary text-lg text-primary-foreground">✦</span>
+            <Logo className="size-9" />
           </Link>
           <b className="min-w-0 flex-1 truncate text-[15px]">{pageLabel}</b>
           {avatar}

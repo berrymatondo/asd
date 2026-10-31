@@ -3,7 +3,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
-  title: "ASD — Faiseur de disciples",
+  title: "Famille ASD — Faiseurs de disciples",
   description: "Plateforme de suivi des groupes, membres, événements, prières et témoignages.",
 };
 

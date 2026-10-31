@@ -69,7 +69,7 @@ function banner(ws: ExcelJS.Worksheet, m: ReportModel, title: string, cols: numb
 
   ws.mergeCells(3, 1, 3, cols);
   const g = ws.getCell(3, 1);
-  g.value = `ASD · Faiseur de disciples — généré le ${m.generatedAt} par ${m.generatedBy}`;
+  g.value = `Famille ASD · Faiseurs de disciples — généré le ${m.generatedAt} par ${m.generatedBy}`;
   g.font = { size: 9, italic: true, color: { argb: C.muted } };
   g.alignment = { indent: 1 };
   return 5;

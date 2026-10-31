@@ -5,6 +5,7 @@ import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fmtPeriod, safeSummary } from "@/lib/format";
 import type { AsdEvent, Person } from "@/lib/types";
+import { Logo } from "@/components/logo";
 
 /** Rapport imprimable d’un événement (enregistrable en PDF via la boîte d’impression du navigateur). */
 export function EventReport({
@@ -33,7 +34,9 @@ export function EventReport({
     <div className="min-h-screen bg-white print:bg-white">
       <div className="mx-auto max-w-[850px] px-6 py-11 text-[15px] leading-relaxed text-[#1b2941] print:p-0">
         <header className="flex items-center justify-between">
-          <strong>✦ ASD · Faiseur de disciples</strong>
+          <strong className="flex items-center gap-2">
+            <Logo className="size-9 ring-0 print:shadow-none" /> Famille ASD · Faiseurs de disciples
+          </strong>
           <span className="text-[#68758a]">Rapport d’événement</span>
         </header>
         <h1 className="mt-6 text-3xl font-bold text-primary">{e.title}</h1>

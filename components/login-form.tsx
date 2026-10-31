@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Logo } from "@/components/logo";
 
 export function LoginForm({ next }: { next: string }) {
   const [state, action, pending] = React.useActionState(login, undefined);
@@ -14,10 +15,10 @@ export function LoginForm({ next }: { next: string }) {
   return (
     <Card className="w-full max-w-sm gap-5 p-7">
       <div className="flex items-center gap-3">
-        <div className="grid size-10.5 place-items-center rounded-[13px] bg-primary text-2xl text-primary-foreground">✦</div>
+        <Logo className="size-14" priority />
         <div>
-          <b className="text-xl">ASD</b>
-          <small className="mt-0.5 block text-[11px] text-muted-foreground">Faiseur de disciples</small>
+          <b className="text-lg leading-tight">Famille ASD</b>
+          <small className="mt-0.5 block text-[11px] text-muted-foreground">Faiseurs de disciples</small>
         </div>
       </div>
       <div>
