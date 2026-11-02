@@ -36,7 +36,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const rows = await db()`
-    select u.id, u.name, u.email, u.role, u.person_id as "personId"
+    select u.id, u.name, u.email, u.role, u.person_id as "personId", u.group_id as "groupId"
     from sessions s join users u on u.id = s.user_id
     where s.id = ${hashToken(token)} and s.expires_at > now() and u.active`;
   return (rows[0] as SessionUser | undefined) ?? null;
@@ -81,9 +81,12 @@ export const manages = (managed: Managed, groupId: number | null | undefined) =>
 export const getVisibleGroups = cache(async (user: SessionUser): Promise<Managed> => {
   const managed = await getManaged(user);
   if (managed === "all") return "all";
-  if (!user.personId) return managed;
-  const [p] = await db()`select group_id from people where id = ${user.personId}`;
-  const own = p?.group_id as number | null | undefined;
+  // Groupe de la fiche membre, sinon groupe du compte (comptes « membreX »)
+  let own = user.groupId;
+  if (user.personId) {
+    const [p] = await db()`select group_id from people where id = ${user.personId}`;
+    own = (p?.group_id as number | null | undefined) ?? own;
+  }
   return own != null && !managed.includes(own) ? [...managed, own] : managed;
 });
 

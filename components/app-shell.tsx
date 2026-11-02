@@ -79,7 +79,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [pwdOpen, setPwdOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
 
-  const items = NAV.filter((n) => (!n.bergerOnly || isBerger) && (!n.adminOnly || isAdmin));
+  // Un membre n’accède qu’aux événements, documents, prières et témoignages
+  const isMember = user.role === "membre";
+  const items = NAV.filter((n) => (isMember ? n.member : (!n.bergerOnly || isBerger) && (!n.adminOnly || isAdmin)));
   const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
   const current = NAV.find((n) => isActive(n.href));
   const pageLabel = current?.label ?? "Vue d’ensemble";

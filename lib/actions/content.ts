@@ -1,6 +1,7 @@
 "use server";
 
-import { assertUser, getManaged, manages } from "@/lib/auth";
+import bcrypt from "bcryptjs";
+import { assertUser, getManaged, getVisibleGroups, manages } from "@/lib/auth";
 import { db } from "@/lib/db";
 import type { CollectionKey, Managed, Result, SessionUser } from "@/lib/types";
 import { date, id, mutation, optionalId, required, text, time, ValidationError } from "@/lib/validate";
@@ -50,7 +51,12 @@ export async function saveGroup(input: Input): Promise<Result> {
       const r = await db()`update groups set name=${v.name}, goal=${v.goal}, description=${v.desc}, shepherd_id=${v.shepherdId} where id=${gid} returning id`;
       if (!r.length) return "Groupe introuvable.";
     } else {
-      await db()`insert into groups (name, goal, description, shepherd_id) values (${v.name}, ${v.goal}, ${v.desc}, ${v.shepherdId})`;
+      const [g] = await db()`insert into groups (name, goal, description, shepherd_id) values (${v.name}, ${v.goal}, ${v.desc}, ${v.shepherdId}) returning id`;
+      // Compte membre du groupe : « membreX@asd.be » / « passwordX », X = numéro du groupe
+      const n = v.name.match(/(\d+)\s*$/)?.[1] ?? g.id;
+      await db()`insert into users (name, email, password_hash, role, group_id)
+                 values (${`Membres — ${v.name}`}, ${`membre${n}@asd.be`}, ${await bcrypt.hash(`password${n}`, 10)}, 'membre', ${g.id})
+                 on conflict (email) do nothing`;
     }
   });
 }
@@ -231,6 +237,12 @@ async function assertCanEdit(table: "prayers" | "testimonies", itemId: number, u
     throw new ValidationError("Vous ne pouvez modifier que vos publications ou celles des groupes que vous gérez.");
 }
 
+/** Un membre ne publie que dans son propre groupe. */
+async function assertMemberGroup(user: SessionUser, groupId: number) {
+  if (user.role === "membre" && !manages(await getVisibleGroups(user), groupId))
+    throw new ValidationError("Vous ne pouvez publier que dans votre groupe.");
+}
+
 export async function savePrayer(input: Input): Promise<Result> {
   return mutation(async () => {
     const user = await assertUser();
@@ -241,6 +253,7 @@ export async function savePrayer(input: Input): Promise<Result> {
       desc: required(input.desc, "Description", 5000),
       personId: optionalId(input.personId),
     };
+    await assertMemberGroup(user, v.groupId);
     await assertPersonInGroup(v.personId, v.groupId);
     const pid = optionalId(input.id);
     if (pid) {
@@ -266,6 +279,7 @@ export async function saveTestimony(input: Input): Promise<Result> {
       prayerId: optionalId(input.prayerId),
       personId: optionalId(input.personId),
     };
+    await assertMemberGroup(user, v.groupId);
     await assertPersonInGroup(v.personId, v.groupId);
     if (v.prayerId) {
       const [p] = await db()`select answered, group_id from prayers where id=${v.prayerId}`;

@@ -75,8 +75,8 @@ function FormBody({ type, itemId, onDone }: { type: CollectionKey; itemId?: Id |
   const [groupId, setGroupId] = React.useState<string>(
     o.groupId != null
       ? String(o.groupId)
-      : isPost && myFiche?.groupId != null
-        ? String(myFiche.groupId)
+      : isPost && (myFiche?.groupId ?? user.groupId) != null
+        ? String(myFiche?.groupId ?? user.groupId)
       : type === "people" && !itemId
         ? "none"
         : (type === "events" && itemId) || (type === "docs" && isAdmin)

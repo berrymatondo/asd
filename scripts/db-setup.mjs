@@ -46,6 +46,8 @@ const schema = [
   `alter table groups add column if not exists shepherd_id integer references people(id) on delete set null`,
   // Un compte peut être relié à une fiche membre (une seule fiche par compte)
   `alter table users add column if not exists person_id integer unique references people(id) on delete set null`,
+  // Compte rattaché à un groupe sans fiche membre (comptes partagés « membreX », supprimés avec leur groupe)
+  `alter table users add column if not exists group_id integer references groups(id) on delete cascade`,
   `create table if not exists events (
     id serial primary key,
     title text not null,
@@ -230,5 +232,29 @@ for (const [email, fullName] of [["berger@asd.local", "Pasteur Samuel"], ["membr
               and not exists (select 1 from users u where u.person_id = p.id) limit 1)
             where email = ${email} and person_id is null`;
 }
+
+// Comptes membres de groupe : « membreX@asd.be » / « passwordX », X = numéro du groupe
+// (le nombre en fin de nom, ex. « Groupe 3 » → 3 ; à défaut, son identifiant)
+const groupNumber = (g) => g.name.match(/(\d+)\s*$/)?.[1] ?? String(g.id);
+const memberAccount = (g) => ({ email: `membre${groupNumber(g)}@asd.be`, password: `password${groupNumber(g)}` });
+const created = [];
+// Anciens comptes de groupe (autre format d’identifiant) : renommés, mot de passe réinitialisé
+for (const g of await sql`select g.id, g.name, u.id as uid, u.email from groups g join users u on u.group_id = g.id`) {
+  const { email, password } = memberAccount(g);
+  if (g.email === email || (await sql`select 1 from users where email=${email}`).length) continue;
+  await sql.transaction([
+    sql`update users set email=${email}, password_hash=${await bcrypt.hash(password, 10)} where id=${g.uid}`,
+    sql`delete from sessions where user_id=${g.uid}`,
+  ]);
+  console.log(`✓ Compte ${g.email} renommé en ${email} (mot de passe ${password})`);
+}
+for (const g of await sql`select id, name from groups g where not exists (select 1 from users u where u.group_id = g.id) order by id`) {
+  const { email, password } = memberAccount(g);
+  const r = await sql`insert into users (name, email, password_hash, role, group_id)
+                      values (${`Membres — ${g.name}`}, ${email}, ${await bcrypt.hash(password, 10)}, 'membre', ${g.id})
+                      on conflict (email) do nothing returning email`;
+  if (r.length) created.push(`${email} / ${password}`);
+}
+if (created.length) console.log(`✓ Comptes membres de groupe créés : ${created.join(", ")}`);
 
 await sql`delete from sessions where expires_at < now()`;

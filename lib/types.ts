@@ -16,6 +16,8 @@ export interface SessionUser {
   role: Role;
   /** Fiche membre reliée au compte */
   personId: Id | null;
+  /** Groupe du compte (comptes « membreX » partagés, sans fiche membre) */
+  groupId: Id | null;
 }
 
 export interface User extends SessionUser {

@@ -30,18 +30,21 @@ export async function getAppData(user: SessionUser): Promise<{ data: AppData; ma
 
   // Fiche complète : admin, ou berger pour les membres de ses groupes et ceux sans groupe
   const fullAccess = (p: Person) => user.role !== "membre" && (p.groupId == null || manages(managed, p.groupId));
+  // Un membre ne reçoit que les éléments de son groupe (ex. membre3@asd.be → groupe 3)
+  const isMember = user.role === "membre";
+  const inMyGroup = (gid: number | null) => !isMember || (gid != null && manages(visible, gid));
 
   return {
     managed,
     data: {
-      groups: groups as Group[],
-      people: (people as Person[]).map((p) => (fullAccess(p) ? p : redact(p))),
+      groups: (groups as Group[]).filter((g) => inMyGroup(g.id)),
+      people: (people as Person[]).filter((p) => inMyGroup(p.groupId)).map((p) => (fullAccess(p) ? p : redact(p))),
       // Événements d’un groupe : visibles par l’admin, le berger du groupe et ses membres
       events: (events as AsdEvent[]).filter((e) => canSeeGroupItem(visible, e.groupId)),
       // Documents d’un groupe : visibles par l’admin, le berger du groupe et ses membres ; ceux de l’admin « tous les groupes » par tous
       docs: (docs as Doc[]).filter((d) => canSeeGroupItem(visible, d.groupId)),
-      prayers: prayers as Prayer[],
-      testimonies: testimonies as Testimony[],
+      prayers: (prayers as Prayer[]).filter((p) => inMyGroup(p.groupId)),
+      testimonies: (testimonies as Testimony[]).filter((t) => inMyGroup(t.groupId)),
     },
   };
 }
@@ -73,6 +76,6 @@ export async function getEventReport(id: number) {
 }
 
 export async function getUsers(): Promise<User[]> {
-  const rows = await db()`select id, name, email, role, active, person_id as "personId", created_at::text as "createdAt" from users order by name`;
+  const rows = await db()`select id, name, email, role, active, person_id as "personId", group_id as "groupId", created_at::text as "createdAt" from users order by name`;
   return rows as User[];
 }
